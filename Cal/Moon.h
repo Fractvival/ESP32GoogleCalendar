@@ -4,9 +4,10 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
+#include <math.h>
 
-#define DEG_TO_RAD 0.017453292519943295
-#define RAD_TO_DEG 57.29577951308232
+#define DEG_TO_RAD 0.017453292519943295769236907684886
+#define RAD_TO_DEG 57.295779513082320876798154814105
 
 class MoonCalc {
 
@@ -15,8 +16,6 @@ public:
   // ================= TIME =================
   static void initTime()
   {
-    //setenv("TZ", "CET-1CEST,M3.5.0/2,M10.5.0/3", 1);
-    //tzset();
     configTime(3600, 3600, "cz.pool.ntp.org", "pool.ntp.org");
 
     struct tm t;
@@ -35,23 +34,29 @@ public:
          + d + B - 1524.5 + hour / 24.0;
   }
 
-  // ================= MEEUS POSITION =================
+  // ================= MEEUS POSITION (UPGRADE) =================
   static void moonPosition(double jd, double &ra, double &dec)
   {
-    double T = (jd - 2451545.0) / 36525.0;
+    double d = jd - 2451545.0;
 
-    double L0 = fmod(218.316 + 481267.881 * T, 360);
-    double M  = fmod(134.963 + 477198.867 * T, 360);
-    double F  = fmod(93.272  + 483202.017 * T, 360);
+    double L = fmod(218.3164477 + 13.17639648 * d, 360.0);
+    double M = fmod(134.9633964 + 13.06499295 * d, 360.0);
+    double F = fmod(93.2720950  + 13.22935024 * d, 360.0);
 
-    double lon = L0
+    double lon = L
       + 6.289 * sin(M * DEG_TO_RAD)
-      + 1.274 * sin((2*L0 - M) * DEG_TO_RAD)
-      + 0.658 * sin(2*L0 * DEG_TO_RAD);
+      + 1.274 * sin((2*L - M) * DEG_TO_RAD)
+      + 0.658 * sin(2*L * DEG_TO_RAD)
+      + 0.214 * sin(2*M * DEG_TO_RAD)
+      - 0.186 * sin(L * DEG_TO_RAD)
+      - 0.114 * sin(2*F * DEG_TO_RAD);
 
-    double lat = 5.128 * sin(F * DEG_TO_RAD);
+    double lat = 5.128 * sin(F * DEG_TO_RAD)
+               + 0.280 * sin((M + F) * DEG_TO_RAD)
+               + 0.277 * sin((M - F) * DEG_TO_RAD)
+               + 0.173 * sin((2*L - F) * DEG_TO_RAD);
 
-    double eps = 23.439 - 0.0000004 * (jd - 2451545.0);
+    double eps = 23.439291 - 0.00001314 * d;
 
     double x = cos(lon*DEG_TO_RAD)*cos(lat*DEG_TO_RAD);
     double y = sin(lon*DEG_TO_RAD)*cos(lat*DEG_TO_RAD);
@@ -71,7 +76,13 @@ public:
     moonPosition(jd, ra, dec);
 
     double D = jd - 2451545.0;
-    double GMST = fmod(280.46061837 + 360.98564736629 * D, 360);
+
+    double T = D / 36525.0;
+
+    double GMST = fmod(280.46061837
+      + 360.98564736629 * D
+      + 0.000387933 * T*T
+      - (T*T*T)/38710000.0, 360);
 
     double LST = (GMST + lon) * DEG_TO_RAD;
     double HA = LST - ra;
@@ -84,55 +95,22 @@ public:
     return alt * RAD_TO_DEG;
   }
 
-  // ================= FIND TIMES =================
-  static bool compute(double lat, double lon,
-                      String &riseStr, String &setStr)
-  {
-    struct tm t;
-    if (!getLocalTime(&t)) return false;
 
+  static bool getMoonStatus(double lat, double lon)
+  {
+    time_t now = time(nullptr);
+    struct tm t;
+    gmtime_r(&now, &t);  // 🔥 UTC
     int y = t.tm_year + 1900;
     int m = t.tm_mon + 1;
     int d = t.tm_mday;
-
-    int tz = t.tm_isdst ? 2 : 1;
-
-    double riseUTC = -1, setUTC = -1;
-
-    double prev = moonAltitude(julianDate(y,m,d,0), lat, lon);
-
-    bool fr=false, fs=false;
-
-    for(double h=0.05; h<=24; h+=0.05) // ~3 min krok
-    {
-      double alt = moonAltitude(julianDate(y,m,d,h), lat, lon);
-
-      if(!fr && prev<0 && alt>=0)
-      {
-        riseUTC = h;
-        fr=true;
-      }
-
-      if(!fs && prev>0 && alt<=0)
-      {
-        setUTC = h;
-        fs=true;
-      }
-
-      prev = alt;
-    }
-
-    double rise = riseUTC + tz;
-    double set  = setUTC  + tz;
-
-    if (rise >= 24) rise -= 24;
-    if (set  >= 24) set  -= 24;
-
-    riseStr = toHHMM(rise);
-    setStr  = toHHMM(set);
-
-    return true;
+    double hour = t.tm_hour + t.tm_min / 60.0 + t.tm_sec / 3600.0;
+    double jd = julianDate(y, m, d, hour);
+    double alt = moonAltitude(jd, lat, lon);
+    const double HORIZON = 0.0;
+    return (alt > HORIZON);
   }
+
 
   static bool CalcSun(double lat, double lon,
                       String &sunriseStr, String &sunsetStr)
@@ -205,42 +183,84 @@ public:
     return true;
   }  
 
-  static bool CalcSunFromAPI(double lat, double lon,
-                            String &sunriseStr, String &sunsetStr)
+
+  // ================= FIND TIMES =================
+  static bool compute(double lat, double lon,
+                      String &riseStr, String &setStr)
   {
-    HTTPClient http;
-
-    String url = "https://api.open-meteo.com/v1/forecast?";
-    url += "latitude=" + String(lat,6);
-    url += "&longitude=" + String(lon,6);
-    url += "&daily=sunrise,sunset";
-    url += "&timezone=Europe%2FPrague";
-
-    http.begin(url);
-    int httpCode = http.GET();
-
-    if (httpCode != 200) {
-      http.end();
-      return false;
+    time_t now = time(nullptr);
+    struct tm t;
+    if (!getLocalTime(&t)) return false;
+    int y = t.tm_year + 1900;
+    int m = t.tm_mon + 1;
+    int d = t.tm_mday;
+    int tz = t.tm_isdst ? 2 : 1;
+    const double HORIZON = -0.3;
+    // 🔥 ZAČÁTEK DNE (KLÍČOVÉ)
+    struct tm t0 = t;
+    t0.tm_hour = 0;
+    t0.tm_min = 0;
+    t0.tm_sec = 0;
+    time_t dayStart = mktime(&t0);
+    double prev = moonAltitude(julianDate(y,m,d,0), lat, lon);
+    double bestRise = -1;
+    double bestSet  = -1;
+    double bestRiseDiff = 1e9;
+    double bestSetDiff  = 1e9;
+    for(double h=0.05; h<=48; h+=0.05)
+    {
+      int dayOffset = (int)(h / 24);
+      double hourInDay = fmod(h, 24);
+      double jd = julianDate(y, m, d + dayOffset, hourInDay);
+      double alt = moonAltitude(jd, lat, lon);
+      // --- VÝCHOD ---
+      if(prev < HORIZON && alt >= HORIZON)
+      {
+        double h0 = h - 0.05;
+        double a0 = prev;
+        double a1 = alt;
+        double frac = a0 / (a0 - a1);
+        double eventH = h0 + frac * 0.05;
+        // 🔥 OPRAVA – správný čas události
+        time_t eventTime = dayStart + (time_t)(eventH * 3600);
+        double diff = difftime(eventTime, now);
+        if(diff >= 0 && diff < bestRiseDiff)
+        {
+          bestRiseDiff = diff;
+          bestRise = eventH;
+        }
+      }
+      // --- ZÁPAD ---
+      if(prev > HORIZON && alt <= HORIZON)
+      {
+        double h0 = h - 0.05;
+        double a0 = prev;
+        double a1 = alt;
+        double frac = a0 / (a0 - a1);
+        double eventH = h0 + frac * 0.05;
+        // 🔥 OPRAVA – správný čas události
+        time_t eventTime = dayStart + (time_t)(eventH * 3600);
+        double diff = difftime(eventTime, now);
+        if(diff >= 0 && diff < bestSetDiff)
+        {
+          bestSetDiff = diff;
+          bestSet = eventH;
+        }
+      }
+      prev = alt;
     }
 
-    String payload = http.getString();
-    http.end();
-
-    StaticJsonDocument<2048> doc;
-    DeserializationError err = deserializeJson(doc, payload);
-
-    if (err) return false;
-
-    String sunrise = doc["daily"]["sunrise"][0];
-    String sunset  = doc["daily"]["sunset"][0];
-
-    // formát: 2026-03-29T06:44
-    sunriseStr = sunrise.substring(11,16);
-    sunsetStr  = sunset.substring(11,16);
-
+    if (bestRise < 0 || bestSet < 0) return false;
+    double rise = bestRise + tz;
+    double set  = bestSet  + tz;
+    rise = fmod(rise, 24);
+    set  = fmod(set, 24);
+    riseStr = toHHMM(rise);
+    setStr  = toHHMM(set);
     return true;
-  }  
+  }
+
+
 
   // ================= FORMAT =================
   static String toHHMM(double t)
@@ -256,3 +276,4 @@ public:
     return String(buf);
   }
 };
+
