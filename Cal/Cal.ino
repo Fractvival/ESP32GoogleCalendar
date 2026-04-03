@@ -1,8 +1,12 @@
+//
+// Pred kompilaci nainstalovat ESP32 v manazeru desek od Espressif Systems
+
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <time.h>
 #include <SPI.h>
-#include <GxEPD2_3C.h>
+#include <GxEPD2_3C.h> // nutno doinstalovat
+#include <ArduinoJson.h> // nutno doinstalovat
 #include <WiFiClientSecure.h>
 #include <Fonts/FreeMonoBold24pt7b.h>
 #include <Fonts/FreeMonoBold12pt7b.h>
@@ -13,6 +17,7 @@
 
 #include "Moon.h"
 #include "Nameday_cz.h"
+#include "Ics.h"
 #include "CZUbuntuBold20.h"
 #include "CZUbuntuBold18.h"
 #include "CZUbuntuBold12.h"
@@ -32,9 +37,27 @@
 #include "CZProstoOneRegular5.h"
 #include "CZSigmarRegular20.h"
 
+///////////////////////////////
+//
+//  +------+----------------------------
+//  |      | [wealth] [wind] temp
+//  |  day | [ icon ] [ocpn]  min max
+//  +      +----------------------------
+//  |  nr. | birthday or first event
+//  +      +----------------------------
+//  |      | second event
+//  +------+----------------------------
+//
+///////////////////////////////
+
 // ===== WIFI =====
-const char* ssid = "Darina";
-const char* password = "bublina22";
+//const char* ssid = "Darina";
+//const char* password = "bublina22";
+
+// ===== WIFI =====
+const char* ssid = "Cisco";
+const char* password = "Posta128";
+
 
 // ===== ICS =====
 String ICS_URL = "https://calendar.google.com/calendar/ical/fractvival%40gmail.com/private-2f207af2f9c073193186f1d706bfbd29/basic.ics";
@@ -242,6 +265,7 @@ struct DayResult
 
 #define ICONWIDTH 24
 
+ICSCalendar ical;
 
 
 // ===================
@@ -1133,28 +1157,6 @@ void drawAll(struct tm timeinfo)
 
     int areaHeight = yPosBottomLine - yPosHeadLine;
 
-
-/*
-    display.setFont(&CZUbuntuBold9);
-    int  _thFont = getTextHeightCZ("A", &CZUbuntuBold9);
-    int rowHeight = ICONWIDTH + 2 + (_thFont*2) + 4;
-    int computeRowHeight = areaHeight / rowHeight;
-    int finalRowHeight = areaHeight / computeRowHeight;
-    int rowCount = 0;
-    Rect rectRow[20] = {0};
-    for (int i = 0; i < computeRowHeight; i++ )
-    {
-      display.drawLine(0, yPosHeadLine+(finalRowHeight*(i+1)), display.width(), yPosHeadLine+(finalRowHeight*(i+1)),  GxEPD_BLACK);
-      rectRow[i].x = 0;
-      rectRow[i].y = yPosHeadLine+(finalRowHeight*i);
-      rectRow[i].w = display.width();
-      rectRow[i].h = finalRowHeight;
-      //display.drawRect(rectRow[i].x, rectRow[i].y, rectRow[i].w, rectRow[i].h, GxEPD_RED);
-      drawRow(rectRow[i]);
-      rowCount++;
-    }
-*/
-
     display.setFont(&CZPTSansRegular9);
     int _thFont = getTextHeightCZ("A", &CZPTSansRegular9);
     int rowMin = ICONWIDTH + 2 + (_thFont * 2) + 4;
@@ -1170,6 +1172,7 @@ void drawAll(struct tm timeinfo)
     time(&now);
     struct tm day;
     localtime_r(&now, &day);    
+    String e1, e2;
     for (int i = 0; i < rows; i++)
     {
         int h = baseH + (i < remainder ? 1 : 0);
@@ -1178,29 +1181,13 @@ void drawAll(struct tm timeinfo)
         rectRow[i].w = display.width();
         rectRow[i].h = h;
         struct tm tmp = day;
-        addDays(tmp, i);        
-        drawRow(rectRow[i], tmp, "Pokusný text číslo 1", "Toto je další pokusný text");
+        addDays(tmp, i);
+        ical.getEventsForDay(tmp, e1, e2);
+        drawRow(rectRow[i], tmp, e1.c_str(), e2.c_str());
         // oddělovací čára (volitelně)
         display.drawLine(0, yy + h, display.width(), yy + h, GxEPD_BLACK);
         yy += h;
     }
-
-    ///////////////////////////////
-    //
-    //  +------+----------------------------
-    //  |      | [wealth] [wind] temp
-    //  |  day | [ icon ] [ocpn]  min max
-    //  +      +----------------------------
-    //  |  nr. | birthday or first event
-    //  +      +----------------------------
-    //  |      | second event
-    //  +------+----------------------------
-    //
-    ///////////////////////////////
-
-
-
-
   }
   while(display.nextPage());
 }
@@ -1283,21 +1270,12 @@ void setup()
 
   // ICS
   Serial.println("Downloading ICS...");
-  String ics=downloadICS();
-
-  Serial.print("ICS length: ");
-  Serial.println(ics.length());
-
-  if(ics.length()>50){
-    Serial.println("Parsing ICS...");
-    parseICS(ics,y,m);
-    Serial.print("Events: ");
-    Serial.println(eventCount);
+  if (ical.fetchICS(ICS_URL)) {
+    Serial.println("ICS stažen");
   } else {
-    Serial.println("ICS FAIL -> fallback");
-    eventCount=1;
-    events[0]={d,"NO DATA"};
+    Serial.println("Chyba stahování");
   }
+
 
   Serial.println("Drawing...");
   drawAll(timeinfo);
