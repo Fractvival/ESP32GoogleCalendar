@@ -9,21 +9,16 @@ String getNameDayCZ(int day, int month, int year)
 {
   HTTPClient http;
   //String url = "https://svatkyapi.cz/api/day/";
-
   char dateStr[11];
   sprintf(dateStr, "%04d-%02d-%02d", year, month, day);
-
-  Serial.print("Nameday: ");
-  Serial.println(dateStr);
-
   String url = "https://svatkyapi.cz/api/day/" + String(dateStr);  
-
   http.begin(url);
   int httpCode = http.GET();
   if (httpCode != 200) 
   {
     http.end();
     // chyba API
+    Serial.println("GetNameDay > Chyba API");
     return " ";
   }
   String payload = http.getString();
@@ -33,6 +28,7 @@ String getNameDayCZ(int day, int month, int year)
   if (error) 
   {
     // JSON chyba
+    Serial.println("GetNameDay > Chyba JSON");
     return " ";
   }
   if (doc.containsKey("name")) 
@@ -44,6 +40,7 @@ String getNameDayCZ(int day, int month, int year)
     return String((const char*)doc["svatek"]);
   }
   // neznamy / nezjisteno
+  Serial.println("GetNameDay > Neznama chyba");
   return " ";
 }
 

@@ -8,55 +8,23 @@
 #include <GxEPD2_3C.h> // nutno doinstalovat
 #include <ArduinoJson.h> // nutno doinstalovat
 #include <WiFiClientSecure.h>
-#include <Fonts/FreeMonoBold24pt7b.h>
-#include <Fonts/FreeMonoBold12pt7b.h>
-#include <Fonts/FreeSans9pt7b.h>
-#include <Fonts/FreeMono9pt7b.h>
-#include <Fonts/FreeMonoBold18pt7b.h>
-#include <Fonts/FreeSerifBold9pt7b.h>
-
+#include <ESPAsyncWebServer.h> // ESP Async WebServer by ESP32Async
+#include <AsyncTCP.h> // Async TCP by ESP32Async
+#include <Preferences.h>
 #include "Moon.h"
 #include "Nameday_cz.h"
 #include "Ics.h"
-#include "CZUbuntuBold20.h"
-#include "CZUbuntuBold18.h"
-#include "CZUbuntuBold12.h"
-#include "CZUbuntuBold9.h"
-#include "CZPTSansBold20.h"
-#include "CZPTSansBold22.h"
-#include "CZPTSansRegular18.h"
-#include "CZPTSansRegular12.h"
-#include "CZPTSansRegular9.h"
-#include "CZSpaceMonoRegular18.h"
-#include "CZSpaceMonoRegular12.h"
-#include "CZSpaceMonoRegular9.h"
-#include "CZSpaceMonoRegular5.h"
-#include "CZProstoOneRegular18.h"
-#include "CZProstoOneRegular12.h"
-#include "CZProstoOneRegular9.h"
-#include "CZProstoOneRegular5.h"
-#include "CZSigmarRegular20.h"
-
-///////////////////////////////
-//
-//  +------+----------------------------
-//  |      | [wealth] [wind] temp
-//  |  day | [ icon ] [ocpn]  min max
-//  +      +----------------------------
-//  |  nr. | birthday or first event
-//  +      +----------------------------
-//  |      | second event
-//  +------+----------------------------
-//
-///////////////////////////////
+#include "Fonts/fontinc.h"
+#include <Fonts/FreeSans18pt7b.h>
+#include <Fonts/FreeSerif9pt7b.h>
 
 // ===== WIFI =====
-//const char* ssid = "Darina";
-//const char* password = "bublina22";
+const char* ssid = "Darina";
+const char* password = "bublina22";
 
 // ===== WIFI =====
-const char* ssid = "Cisco";
-const char* password = "Posta128";
+//const char* ssid = "Cisco";
+//const char* password = "Posta128";
 
 
 // ===== ICS =====
@@ -115,8 +83,6 @@ const unsigned char noMoon[] PROGMEM = {
 	0x1c, 0x3c, 0x38, 0x1e, 0x1e, 0x38, 0x0f, 0x0f, 0x30, 0x07, 0xc7, 0x80, 0x03, 0xff, 0xc0, 0x00, 
 	0xff, 0xe0, 0x00, 0x00, 0xf0, 0x00, 0x00, 0x60
 };
-
-
 
 const unsigned char sunny[] PROGMEM = {
 	0x00, 0x00, 0x00, 0x00, 0x18, 0x00, 0x00, 0x18, 0x00, 0x00, 0x18, 0x00, 0x0c, 0x18, 0x30, 0x0e, 
@@ -190,37 +156,71 @@ const unsigned char unknown[] PROGMEM = {
 	0x3c, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
 };
 
-const unsigned char nonewind[] PROGMEM = {
-	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-	0x18, 0x00, 0x00, 0x3c, 0x00, 0x00, 0x7e, 0x00, 0x00, 0xff, 0x00, 0x01, 0xe7, 0x80, 0x03, 0xc3, 
-	0xc0, 0x07, 0x81, 0xe0, 0x07, 0x81, 0xe0, 0x03, 0xc3, 0xc0, 0x01, 0xe7, 0x80, 0x00, 0xff, 0x00, 
-	0x00, 0x7e, 0x00, 0x00, 0x3c, 0x00, 0x00, 0x18, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+const unsigned char windpower0[] PROGMEM = {
+	0x00, 0x00, 0x00, 0x00, 0x3c, 0x00, 0x00, 0x7e, 0x00, 0x00, 0x66, 0x00, 0x00, 0xc3, 0x00, 0x00, 
+	0xc3, 0x00, 0x00, 0xdb, 0x00, 0x00, 0xdb, 0x00, 0x00, 0xc3, 0x00, 0x00, 0xcb, 0x00, 0x00, 0x66, 
+	0x60, 0x00, 0x7e, 0x00, 0x00, 0x3c, 0x00, 0x00, 0x00, 0x00, 0x3f, 0xff, 0xf8, 0x3f, 0xff, 0xfc, 
+	0x00, 0x00, 0x1c, 0x3f, 0xfc, 0x0c, 0x3f, 0xfc, 0x1c, 0x00, 0x0e, 0x3c, 0x00, 0xee, 0x38, 0x00, 
+	0x7c, 0x00, 0x00, 0x7c, 0x00, 0x00, 0x00, 0x00
+};
+
+const unsigned char windpower1[] PROGMEM = {
+	0x00, 0x00, 0x00, 0x00, 0x18, 0x00, 0x00, 0x38, 0x00, 0x00, 0xf8, 0x00, 0x00, 0x78, 0x00, 0x00, 
+	0x18, 0x00, 0x00, 0x18, 0x00, 0x00, 0x18, 0x00, 0x00, 0x18, 0x00, 0x00, 0x18, 0x00, 0x00, 0x18, 
+	0x60, 0x00, 0x7e, 0x00, 0x00, 0x7e, 0x00, 0x00, 0x00, 0x00, 0x3f, 0xff, 0xf8, 0x3f, 0xff, 0xfc, 
+	0x00, 0x00, 0x1c, 0x3f, 0xfc, 0x0c, 0x3f, 0xfc, 0x1c, 0x00, 0x0e, 0x3c, 0x00, 0xee, 0x38, 0x00, 
+	0x7c, 0x00, 0x00, 0x7c, 0x00, 0x00, 0x00, 0x00
+};
+
+const unsigned char windpower2[] PROGMEM = {
+	0x00, 0x00, 0x00, 0x00, 0x3c, 0x00, 0x00, 0x7f, 0x00, 0x00, 0x63, 0x00, 0x00, 0x03, 0x00, 0x00, 
+	0x03, 0x00, 0x00, 0x06, 0x00, 0x00, 0x0e, 0x00, 0x00, 0x1c, 0x00, 0x00, 0x38, 0x00, 0x00, 0x70, 
+	0x60, 0x00, 0x7f, 0x00, 0x00, 0x7f, 0x00, 0x00, 0x00, 0x00, 0x3f, 0xff, 0xf8, 0x3f, 0xff, 0xfc, 
+	0x00, 0x00, 0x1c, 0x3f, 0xfc, 0x0c, 0x3f, 0xfc, 0x1c, 0x00, 0x0e, 0x3c, 0x00, 0xee, 0x38, 0x00, 
+	0x7c, 0x00, 0x00, 0x7c, 0x00, 0x00, 0x00, 0x00
+};
+
+const unsigned char windpower3[] PROGMEM = {
+	0x00, 0x00, 0x00, 0x00, 0x3c, 0x00, 0x00, 0x7e, 0x00, 0x00, 0x46, 0x00, 0x00, 0x06, 0x00, 0x00, 
+	0x06, 0x00, 0x00, 0x3c, 0x00, 0x00, 0x3e, 0x00, 0x00, 0x07, 0x00, 0x00, 0x0b, 0x00, 0x00, 0x03, 
+	0x60, 0x00, 0x7e, 0x00, 0x00, 0x7c, 0x00, 0x00, 0x00, 0x00, 0x3f, 0xff, 0xf8, 0x3f, 0xff, 0xfc, 
+	0x00, 0x00, 0x1c, 0x3f, 0xfc, 0x0c, 0x3f, 0xfc, 0x1c, 0x00, 0x0e, 0x3c, 0x00, 0xee, 0x38, 0x00, 
+	0x7c, 0x00, 0x00, 0x7c, 0x00, 0x00, 0x00, 0x00
+};
+
+const unsigned char drop0[] PROGMEM = {
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x18, 0x00, 0x00, 0x3c, 0x00, 0x00, 
+	0x7e, 0x00, 0x00, 0xc3, 0x00, 0x01, 0x81, 0x80, 0x03, 0x99, 0xc0, 0x07, 0x3c, 0xe0, 0x07, 0x3c, 
+	0xe0, 0x0f, 0x24, 0xf0, 0x0f, 0x24, 0xf0, 0x0f, 0x24, 0xf0, 0x0f, 0x3c, 0xf0, 0x0f, 0x3c, 0xf0, 
+	0x07, 0x99, 0xe0, 0x07, 0x81, 0xe0, 0x03, 0xc3, 0xc0, 0x01, 0xff, 0x80, 0x00, 0xff, 0x00, 0x00, 
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
 };
 
-const unsigned char lowwind[] PROGMEM = {
-	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x18, 0x00, 0x00, 0x3c, 0x00, 0x00, 0x7e, 
-	0x00, 0x00, 0xff, 0x00, 0x01, 0xe7, 0x80, 0x03, 0xc3, 0xc0, 0x03, 0x81, 0xc0, 0x01, 0x00, 0x80, 
-	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+
+const unsigned char drop1[] PROGMEM = {
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x18, 0x00, 0x00, 0x3c, 0x00, 0x00, 
+	0x7e, 0x00, 0x00, 0xe3, 0x00, 0x01, 0xc3, 0x80, 0x03, 0x03, 0xc0, 0x07, 0x03, 0xe0, 0x07, 0x63, 
+	0xe0, 0x0f, 0xe3, 0xf0, 0x0f, 0xe3, 0xf0, 0x0f, 0xe3, 0xf0, 0x0f, 0xe3, 0xf0, 0x0f, 0xe3, 0xf0, 
+	0x07, 0xe3, 0xe0, 0x07, 0x00, 0xe0, 0x03, 0x00, 0xc0, 0x01, 0xff, 0x80, 0x00, 0xff, 0x00, 0x00, 
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
 };
 
-const unsigned char mediumwind[] PROGMEM = {
-	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-	0x18, 0x00, 0x00, 0x3c, 0x00, 0x00, 0x7e, 0x00, 0x00, 0xff, 0x00, 0x01, 0xe7, 0x80, 0x03, 0xc3, 
-	0xc0, 0x03, 0x99, 0xc0, 0x01, 0x3c, 0x80, 0x00, 0x7e, 0x00, 0x00, 0xff, 0x00, 0x01, 0xe7, 0x80, 
-	0x03, 0xc3, 0xc0, 0x03, 0x81, 0xc0, 0x01, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+const unsigned char drop2[] PROGMEM = {
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x18, 0x00, 0x00, 0x3c, 0x00, 0x00, 
+	0x7e, 0x00, 0x00, 0x83, 0x00, 0x01, 0x01, 0x80, 0x03, 0x38, 0xc0, 0x07, 0xf8, 0xe0, 0x07, 0xf8, 
+	0xe0, 0x0f, 0xf1, 0xf0, 0x0f, 0xe1, 0xf0, 0x0f, 0xc3, 0xf0, 0x0f, 0x87, 0xf0, 0x0f, 0x8f, 0xf0, 
+	0x07, 0x1f, 0xe0, 0x07, 0x00, 0x60, 0x03, 0x00, 0x40, 0x01, 0xff, 0x80, 0x00, 0xff, 0x00, 0x00, 
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
 };
 
-const unsigned char highwind[] PROGMEM = {
-	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x18, 0x00, 0x00, 0x3c, 0x00, 0x00, 0x7e, 0x00, 0x00, 
-	0xff, 0x00, 0x01, 0xe7, 0x80, 0x03, 0xc3, 0xc0, 0x03, 0x99, 0xc0, 0x01, 0x3c, 0x80, 0x00, 0x7e, 
-	0x00, 0x00, 0xff, 0x00, 0x01, 0xe7, 0x80, 0x03, 0xc3, 0xc0, 0x03, 0x99, 0xc0, 0x01, 0x3c, 0x80, 
-	0x00, 0x7e, 0x00, 0x00, 0xff, 0x00, 0x01, 0xe7, 0x80, 0x03, 0xc3, 0xc0, 0x03, 0x81, 0xc0, 0x01, 
-	0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+const unsigned char drop3[] PROGMEM = {
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x18, 0x00, 0x00, 0x3c, 0x00, 0x00, 
+	0x7e, 0x00, 0x00, 0x83, 0x00, 0x01, 0x01, 0x80, 0x03, 0xf8, 0xc0, 0x07, 0xf8, 0xe0, 0x07, 0xf8, 
+	0xe0, 0x0f, 0xc3, 0xf0, 0x0f, 0xc1, 0xf0, 0x0f, 0xf0, 0xf0, 0x0f, 0xf8, 0xf0, 0x0f, 0xf8, 0xf0, 
+	0x07, 0x70, 0xe0, 0x07, 0x01, 0xe0, 0x03, 0x03, 0xc0, 0x01, 0xff, 0x80, 0x00, 0xff, 0x00, 0x00, 
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
 };
+
 
 struct tm timeinfo;
 
@@ -240,8 +240,9 @@ struct DayResult
 {
   float tMin;
   float tMax;
-  uint8_t icon;  // číslo
-  uint8_t wind;  // číslo
+  uint8_t icon;
+  uint8_t wind;
+  uint8_t rainIntensity;
   bool valid;
 };
 
@@ -262,6 +263,11 @@ struct DayResult
 #define WIND_MEDIUM  2
 #define WIND_HIGH    3
 
+#define RAIN_NONE    0
+#define RAIN_LOW     1
+#define RAIN_MEDIUM  2
+#define RAIN_HIGH    3
+
 
 #define ICONWIDTH 24
 
@@ -270,6 +276,7 @@ ICSCalendar ical;
 
 // ===================
 
+/*
 String downloadICS() 
 {
   WiFiClientSecure client;
@@ -348,19 +355,24 @@ void parseICS(String data,int year,int month)
   }
 }
 
-void printCZ(const char* text) {
-  while (*text) {
+*/
+
+void printCZ(const char* text) 
+{
+  while (*text) 
+  {
     uint8_t c = (uint8_t)*text;
 
-    // ASCII (funguje přímo)
-    if (c >= 32 && c <= 126) {
+    if (c >= 32 && c <= 126) 
+    {
       display.write(c - 32);
     }
 
-    // UTF-8 2-byte znaky
-    else if (c == 0xC3) {
+    else if (c == 0xC3) 
+    {
       text++;
-      switch ((uint8_t)*text) {
+      switch ((uint8_t)*text) 
+      {
         // malé
         case 0xA1: display.write(95); break;  // á
         case 0xA9: display.write(98); break;  // é
@@ -379,9 +391,11 @@ void printCZ(const char* text) {
       }
     }
 
-    else if (c == 0xC4) {
+    else if (c == 0xC4) 
+    {
       text++;
-      switch ((uint8_t)*text) {
+      switch ((uint8_t)*text) 
+      {
         // malé
         case 0x8D: display.write(96); break;  // č
         case 0x8F: display.write(97); break;  // ď
@@ -396,9 +410,11 @@ void printCZ(const char* text) {
       }
     }
 
-    else if (c == 0xC5) {
+    else if (c == 0xC5) 
+    {
       text++;
-      switch ((uint8_t)*text) {
+      switch ((uint8_t)*text) 
+      {
         // malé
         case 0x99: display.write(103); break; // ř
         case 0xA1: display.write(104); break; // š
@@ -428,8 +444,6 @@ int getTextHeightCZ(const char* text, const GFXfont* font)
   {
     uint8_t c = (uint8_t)*text;
     uint8_t index = 0;
-
-    // --- mapování (stejné jako máš ve width) ---
 
     if (c >= 32 && c <= 126) {
       index = c - 32;
@@ -649,10 +663,9 @@ void drawTextCentered(
 }
 
 
-bool getWeatherForDay(float lat, float lon, tm timeinfo, DayResult &out) {
-
+bool getWeatherForDay(float lat, float lon, tm timeinfo, DayResult &out) 
+{
   out.valid = false;
-
   char targetDate[11];
   sprintf(targetDate, "%04d-%02d-%02d",
           timeinfo.tm_year + 1900,
@@ -667,11 +680,17 @@ bool getWeatherForDay(float lat, float lon, tm timeinfo, DayResult &out) {
 
   HTTPClient http;
   http.begin(url);
+  http.setTimeout(15000);
 
-  if (http.GET() != 200) {
+  int httpCode = http.GET();
+  if (httpCode != 200)
+  {
+    Serial.print("GetWeatherForDay > HTTP error: ");
+    Serial.println(httpCode);
     http.end();
     return false;
-  }
+  }  
+
 
   String payload = http.getString();
   http.end();
@@ -686,7 +705,9 @@ bool getWeatherForDay(float lat, float lon, tm timeinfo, DayResult &out) {
 
   StaticJsonDocument<2048> doc;
 
-  if (deserializeJson(doc, payload, DeserializationOption::Filter(filter))) {
+  if (deserializeJson(doc, payload, DeserializationOption::Filter(filter))) 
+  {
+    Serial.println("GetWeatherForDay > deserializeJson chyba!");
     return false;
   }
 
@@ -697,9 +718,11 @@ bool getWeatherForDay(float lat, float lon, tm timeinfo, DayResult &out) {
   JsonArray rain = doc["daily"]["precipitation_sum"];
   JsonArray wind = doc["daily"]["windspeed_10m_max"];
 
-  for (int i = 0; i < time.size(); i++) {
+  for (int i = 0; i < time.size(); i++) 
+  {
 
-    if (strcmp(time[i], targetDate) == 0) {
+    if (strcmp(time[i], targetDate) == 0) 
+    {
 
       out.tMin = tMin[i];
       out.tMax = tMax[i];
@@ -746,8 +769,10 @@ bool getWeatherForDay(float lat, float lon, tm timeinfo, DayResult &out) {
       else if (w_ms < 10.0) out.wind = WIND_MEDIUM;
       else out.wind = WIND_HIGH;
 
-      Serial.print("Wind raw: ");
-      Serial.println(w_ms);
+      if (r < 0.2) out.rainIntensity = RAIN_NONE;
+      else if (r < 2.0) out.rainIntensity = RAIN_LOW;
+      else if (r < 10.0) out.rainIntensity = RAIN_MEDIUM;
+      else out.rainIntensity = RAIN_HIGH;
 
       out.valid = true;
       return true;
@@ -774,9 +799,7 @@ void drawRow(const Rect& rect, const struct tm& date, const char* event1, const 
     "Ne", "Po", "Út", "St", "Čt", "Pá", "So"
   };  
 
-  // ===== 1️⃣ LEVÝ SLOUPEC (den) =====
   int leftW = (rect.w * 15) / 100;
-
   partRect[0] = { rect.x, rect.y, leftW, rect.h };
 
   Rect topRect;
@@ -784,13 +807,11 @@ void drawRow(const Rect& rect, const struct tm& date, const char* event1, const 
 
   int split = (partRect[0].h * 60) / 100;
 
-  // horní část (70 %)
   topRect.x = partRect[0].x;
   topRect.y = partRect[0].y;
   topRect.w = partRect[0].w;
   topRect.h = split;
 
-  // spodní část (30 %)
   bottomRect.x = partRect[0].x;
   bottomRect.y = partRect[0].y + split;
   bottomRect.w = partRect[0].w;
@@ -803,95 +824,75 @@ void drawRow(const Rect& rect, const struct tm& date, const char* event1, const 
   int dayHeightFont = getTextHeightCZ("A", &CZUbuntuBold12);
   int dayWidthFont = getTextWidthCZ(dayStr, &CZUbuntuBold12);
   drawTextCentered(topRect, dayStr, dayWidthFont, dayHeightFont);  
-  //int dayHeightFont = getTextHeightCZ(String(date.tm_mday).c_str(), &CZUbuntuBold9);
-  //int dayWidthFont = getTextWidthCZ(String(date.tm_mday).c_str(), &CZUbuntuBold9);
-  //drawTextCentered(topRect, String(date.tm_mday).c_str(), dayWidthFont, dayHeightFont);
 
   display.setTextColor(GxEPD_BLACK);
-  display.setFont(&CZUbuntuBold9);
-  int daynameHeightFont = getTextHeightCZ("A", &CZUbuntuBold9);
-  int daynameWidthFont = getTextWidthCZ(daysCZ[date.tm_wday], &CZUbuntuBold9);
+  display.setFont(&Exo_SemiBold9);
+  int daynameHeightFont = getTextHeightCZ("A", &Exo_SemiBold9);
+  int daynameWidthFont = getTextWidthCZ(daysCZ[date.tm_wday], &Exo_SemiBold9);
   drawTextCentered(bottomRect, daysCZ[date.tm_wday], daynameWidthFont, daynameHeightFont);
 
-
-
-  // ===== 2️⃣ PRAVÝ SLOUPEC =====
   Rect right;
   right.x = rect.x + leftW;
   right.y = rect.y;
   right.w = rect.w - leftW;
   right.h = rect.h;
 
-  // ===== 3️⃣ ROZDĚLENÍ NA 3 ŘÁDKY =====
-
-  int topH = ICONWIDTH + 2;  // ikony + padding
+  int topH = ICONWIDTH + 2;
   int remainingH = right.h - topH;
 
   int midH = remainingH / 2;
   int botH = remainingH - midH;
 
-  // TOP (ikony + teplota)
-  partRect[1] = {
+  partRect[1] = 
+  {
     right.x,
     right.y,
     right.w,
     topH
   };
 
-  // MIDDLE (birthday / důležité)
-  partRect[2] = {
+  partRect[2] = 
+  {
     right.x,
     right.y + topH,
     right.w,
     midH
   };
 
-  // BOTTOM (další event)
-  partRect[3] = {
+  partRect[3] = 
+  {
     right.x,
     right.y + topH + midH,
     right.w,
     botH
   };
 
-  // ===== DEBUG DRAW =====
-
   display.drawRect(rect.x, rect.y, rect.w, rect.h, GxEPD_RED);
   display.drawRect(partRect[0].x, partRect[0].y,
                    partRect[0].w, partRect[0].h,
                    GxEPD_RED);
 
-/*
-  for (int i = 0; i < 4; i++) {
-    display.drawRect(partRect[i].x, partRect[i].y,
-                     partRect[i].w, partRect[i].h,
-                     GxEPD_BLACK);
-  }
-*/
-
   display.setTextColor(GxEPD_BLACK);
-  display.setFont(&CZPTSansRegular9);
+  display.setFont(&MarkaziText_Regular12);
 
-  int event1HeightFont = getTextHeightCZ("A", &CZPTSansRegular9);
-  int event1WidthFont = getTextWidthCZ(event1, &CZPTSansRegular9);
+  int event1HeightFont = getTextHeightCZ("A", &MarkaziText_Regular12);
+  int event1WidthFont = getTextWidthCZ(event1, &MarkaziText_Regular12);
+
   // první řádek
   display.setCursor(
       partRect[2].x + 2,
       partRect[2].y + event1HeightFont
   );
   printCZ(event1);
-  //drawTextCentered(partRect[2], event1, event1WidthFont, event1HeightFont);
 
   // druhý řádek
-  int event2HeightFont = getTextHeightCZ("A", &CZPTSansRegular9);
-  int event2WidthFont = getTextWidthCZ(event2, &CZPTSansRegular9);
+  int event2HeightFont = getTextHeightCZ("A", &MarkaziText_Regular12);
+  int event2WidthFont = getTextWidthCZ(event2, &MarkaziText_Regular12);
   display.setCursor(
       partRect[3].x + 2,
       partRect[3].y + event2HeightFont
   );
   printCZ(event2);
-  //drawTextCentered(partRect[3], event2, event2WidthFont, event2HeightFont);
-
 
   DayResult dayRes;
   if (getWeatherForDay(LAT, LON, date, dayRes))
@@ -950,61 +951,76 @@ void drawRow(const Rect& rect, const struct tm& date, const char* event1, const 
     {
       case WIND_NONE:
       {
-        display.drawBitmap(partRect[1].x + ICONWIDTH + 2, partRect[1].y+1, nonewind, ICONWIDTH, ICONWIDTH, GxEPD_BLACK);    
+        display.drawBitmap(partRect[1].x + ICONWIDTH + 2, partRect[1].y+1, windpower0/*nonewind*/, ICONWIDTH, ICONWIDTH, GxEPD_BLACK);    
         break;
       }
       case WIND_LOW:
       {
-        display.drawBitmap(partRect[1].x + ICONWIDTH + 2, partRect[1].y+1, lowwind, ICONWIDTH, ICONWIDTH, GxEPD_BLACK);    
+        display.drawBitmap(partRect[1].x + ICONWIDTH + 2, partRect[1].y+1, windpower1/*lowwind*/, ICONWIDTH, ICONWIDTH, GxEPD_BLACK);    
         break;
       }
       case WIND_MEDIUM:
       {
-        display.drawBitmap(partRect[1].x + ICONWIDTH + 2, partRect[1].y+1, mediumwind, ICONWIDTH, ICONWIDTH, GxEPD_BLACK);    
+        display.drawBitmap(partRect[1].x + ICONWIDTH + 2, partRect[1].y+1, windpower2/*mediumwind*/, ICONWIDTH, ICONWIDTH, GxEPD_BLACK);    
         break;
       }
       case WIND_HIGH:
       {
-        display.drawBitmap(partRect[1].x + ICONWIDTH + 2, partRect[1].y+1, highwind, ICONWIDTH, ICONWIDTH, GxEPD_BLACK);    
+        display.drawBitmap(partRect[1].x + ICONWIDTH + 2, partRect[1].y+1, windpower3/*highwind*/, ICONWIDTH, ICONWIDTH, GxEPD_BLACK);    
         break;
       }
     }
 
 
+    switch (dayRes.rainIntensity) 
+    {
+      case RAIN_NONE:
+      {
+        display.drawBitmap(partRect[1].x + (ICONWIDTH*2) + 2, partRect[1].y+1, drop0/*nonewind*/, ICONWIDTH, ICONWIDTH, GxEPD_BLACK);    
+        break;
+      }
+      case RAIN_LOW:
+      {
+        display.drawBitmap(partRect[1].x + (ICONWIDTH*2) + 2, partRect[1].y+1, drop1/*lowwind*/, ICONWIDTH, ICONWIDTH, GxEPD_BLACK);    
+        break;
+      }
+      case RAIN_MEDIUM:
+      {
+        display.drawBitmap(partRect[1].x + (ICONWIDTH*2) + 2, partRect[1].y+1, drop2/*mediumwind*/, ICONWIDTH, ICONWIDTH, GxEPD_BLACK);    
+        break;
+      }
+      case RAIN_HIGH:
+      {
+        display.drawBitmap(partRect[1].x + (ICONWIDTH*2) + 2, partRect[1].y+1, drop3/*highwind*/, ICONWIDTH, ICONWIDTH, GxEPD_BLACK);    
+        break;
+      }
+    }
+
+    // teploty
     display.setTextColor(GxEPD_BLACK);
-    display.setFont(&CZUbuntuBold9);
-    int tempHeightFont = getTextHeightCZ("A", &CZUbuntuBold9);
+    display.setFont(&MarkaziText_SemiBold12);
+    int tempHeightFont = getTextHeightCZ("A", &MarkaziText_SemiBold12);
     String tempText = String(dayRes.tMin, 1) + " / " + String(dayRes.tMax, 1) + "°C";
-    int tempWidthFont = getTextWidthCZ(tempText.c_str(), &CZUbuntuBold9);
+    int tempWidthFont = getTextWidthCZ(tempText.c_str(), &MarkaziText_SemiBold12);
     display.setCursor(
-        partRect[1].x + (ICONWIDTH * 2) + 10,
+        partRect[1].x + (ICONWIDTH * 3) + 10,
         partRect[1].y + ((partRect[1].h/2)+(tempHeightFont/2))
     );
     printCZ(tempText.c_str());
-
-
   }
-  
-
-
-
-
 }
-
-
-
 
 
 void drawAll(struct tm timeinfo)
 {
-  const char* namemonth[12] = {
+  const char* namemonth[12] = 
+  {
     "LEDEN","ÚNOR","BŘEZEN","DUBEN","KVĚTEN","ČERVEN","ČERVENEC","SRPEN","ZÁŘÍ","ŘÍJEN","LISTOPAD","PROSINEC"
   };
 
   display.firstPage();
   do
   {
-
     display.setTextColor(GxEPD_RED);
     display.setFont(&CZSigmarRegular20);
     int widthMonthText = getTextWidthCZ(namemonth[timeinfo.tm_mon],&CZSigmarRegular20);
@@ -1016,7 +1032,8 @@ void drawAll(struct tm timeinfo)
     display.setCursor(xPosMonthText, yPosMonthText);
     printCZ(namemonth[timeinfo.tm_mon]);
 
-    display.setFont(&FreeMonoBold18pt7b);
+    //display.setFont(&FreeSans18pt7b);
+    display.setFont(&Roboto_Medium20);
     int16_t _x1, _y1;
     uint16_t _w, _h;
     display.getTextBounds(String(timeinfo.tm_mday), 0, 0, &_x1, &_y1, &_w, &_h);        
@@ -1029,7 +1046,7 @@ void drawAll(struct tm timeinfo)
     display.setCursor(xPosDayText, yPosDayText);
     display.print(String(timeinfo.tm_mday));
 
-    int yPosIcons = yPosDayText-_h;//(display.height()/100)*20;
+    int yPosIcons = yPosDayText-_h;
 
     display.drawBitmap(0, yPosIcons, sunIcon, ICONWIDTH, ICONWIDTH, GxEPD_BLACK);
     if (MoonCalc::getMoonStatus(LAT, LON))
@@ -1047,7 +1064,8 @@ void drawAll(struct tm timeinfo)
     int hour = timeinfo.tm_hour;
     int min = timeinfo.tm_min;
 
-    display.setFont(&FreeSans9pt7b);
+    //display.setFont(&FreeSerif9pt7b);
+    display.setFont(&Roboto_Medium);
 
     String srStr, ssStr;
     //CalcSunFromAPI(LAT, LON, srStr, ssStr);
@@ -1149,12 +1167,6 @@ void drawAll(struct tm timeinfo)
     display.drawLine(0, yPosBottomLine + 3, display.width(), yPosBottomLine + 3, GxEPD_BLACK);
     display.drawLine(0, yPosBottomLine, display.width(), yPosBottomLine, GxEPD_BLACK);
 
-    Serial.print("Width: ");
-    Serial.println(display.width());
-
-    Serial.print("Area height: ");
-    Serial.println(yPosBottomLine - yPosHeadLine);
-
     int areaHeight = yPosBottomLine - yPosHeadLine;
 
     display.setFont(&CZPTSansRegular9);
@@ -1200,17 +1212,14 @@ void drawAll(struct tm timeinfo)
 // ===== SETUP =====
 void setup()
 {
-
   Serial.begin(115200);
-  delay(1000);
+  delay(200);
   Serial.println("=== START ===");
   SPI.begin(12,-1,11,CS_PIN);
   Serial.println("SPI OK");
   display.init(115200);
   display.setRotation(1);
   Serial.println("Display OK");
-
-  // WIFI
   Serial.println("Connecting WiFi...");
   WiFi.begin(ssid,password);
   int wifiTry=0;
@@ -1223,60 +1232,33 @@ void setup()
       break;
     }
   }
-
   if(WiFi.status()==WL_CONNECTED){
     Serial.println("\nWiFi OK");
   }
-
   Serial.println("Sync time...");
   MoonCalc::initTime();
   while (!getLocalTime(&timeinfo)) delay(200);
-
   int y=timeinfo.tm_year+1900;
   int m=timeinfo.tm_mon+1;
   int d=timeinfo.tm_mday;
-
   int h=timeinfo.tm_hour;
   int min=timeinfo.tm_min;
-
   Serial.print("Date: ");
   Serial.print(d); Serial.print(".");
   Serial.print(m); Serial.print(".");
   Serial.println(y);
-
   Serial.print("Time: ");
   Serial.print(h); Serial.print(":");
   Serial.println(min);
-
-  String sr, ss;
-  CalcSunFromAPI(LAT, LON, sr, ss);
-
-  Serial.print("Sunrise: "); Serial.println(sr);
-  Serial.print("Sunset: "); Serial.println(ss);
-
-  String rise, set;
-
-  if (MoonCalc::compute(LAT, LON, rise, set)) {
-
-    Serial.print("Moonrise: ");
-    Serial.println(rise);
-
-    Serial.print("Moonset: ");
-    Serial.println(set);
-
-  } else {
-    Serial.println("No rise/set today");
-  }  
-
-  // ICS
   Serial.println("Downloading ICS...");
-  if (ical.fetchICS(ICS_URL)) {
+  if (ical.fetchICS(ICS_URL)) 
+  {
     Serial.println("ICS stažen");
-  } else {
+  } 
+  else
+  {
     Serial.println("Chyba stahování");
   }
-
-
   Serial.println("Drawing...");
   drawAll(timeinfo);
   Serial.println("DONE");
@@ -1286,4 +1268,5 @@ void setup()
 
 void loop()
 {
+  delay(1000);
 }
