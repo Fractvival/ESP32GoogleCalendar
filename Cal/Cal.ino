@@ -18,27 +18,15 @@
 #include <Fonts/FreeSans18pt7b.h>
 #include <Fonts/FreeSerif9pt7b.h>
 
-// ===== WIFI =====
-const char* ssid = "Darina";
-const char* password = "bublina22";
-
-// ===== WIFI =====
-//const char* ssid = "Cisco";
-//const char* password = "Posta128";
-
 
 // ===== ICS =====
-String ICS_URL = "https://calendar.google.com/calendar/ical/fractvival%40gmail.com/private-2f207af2f9c073193186f1d706bfbd29/basic.ics";
+float lat = 0;
+float lon = 0;
+String ics = "";
 
-/*
-// ===== BRNO =====
-double LAT = 49.195;
-double LON = 16.607;
-*/
 
-// ===== HOSTERADICE =====
-double LAT = 48.9500557;
-double LON = 16.259316;
+#define RESET_PIN 2
+#define CLEAR_PIN 4
 
 
 // ===== DISPLAY =====
@@ -47,6 +35,7 @@ double LON = 16.259316;
 #define RES_PIN  46
 #define BUSY_PIN 3
 
+// Displej 400x300 pixelu 3Color 4.2Inch WeAct Studio
 GxEPD2_3C<GxEPD2_420c_GDEY042Z98, GxEPD2_420c_GDEY042Z98::HEIGHT> display(
   GxEPD2_420c_GDEY042Z98(CS_PIN, DC_PIN, RES_PIN, BUSY_PIN)
 );
@@ -273,115 +262,453 @@ struct DayResult
 
 ICSCalendar ical;
 
+AsyncWebServer server(80);
+Preferences prefs;
 
-// ===================
 
-/*
-String downloadICS() 
-{
-  WiFiClientSecure client;
-  client.setInsecure();
-  const char* host = "calendar.google.com";
-  Serial.println("Connecting to Google...");
-  if (!client.connect(host, 443)) 
-  {
-    Serial.println("Connection failed");
-    return "";
-  }
-  Serial.println("Connected!");
-  client.print(String("GET ") + ICS_URL + " HTTP/1.1\r\n" +
-               "Host: " + host + "\r\n" +
-               "User-Agent: ESP32\r\n" +
-               "Connection: close\r\n\r\n");
-  String payload = "";
-  bool body = false;
-  while (client.connected() || client.available()) 
-  {
-    String line = client.readStringUntil('\n');
-    if (line == "\r") 
-    {
-      body = true;
-      continue;
+// ===== CONFIG =====
+String ssidList[5];
+String passList[5];
+
+// ===== HTML =====
+String htmlPage() {
+
+    String wifiList = "";
+
+    for (int i = 0; i < 3; i++) {
+        if (ssidList[i] != "") {
+            wifiList += "<div class='wifi'>";
+            wifiList += "<span>" + ssidList[i] + "</span>";
+            wifiList += "<a href='/del?id=" + String(i) + "'>✕</a>";
+            wifiList += "</div>";
+        }
     }
-    if (body) 
-    {
-      payload += line;
-    }
-  }
-  Serial.print("Downloaded bytes: ");
-  Serial.println(payload.length());
-  return payload;
+
+    String html = R"rawliteral(
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<style>
+
+* {
+  box-sizing: border-box;
 }
 
-// ===== EVENT =====
-struct Event {
-  int day;
-  String text;
-};
-
-#define MAX_EVENTS 32
-Event events[MAX_EVENTS];
-int eventCount = 0;
-
-
-void parseICS(String data,int year,int month)
-{
-  eventCount=0;
-  int i=0;
-
-  while((i=data.indexOf("BEGIN:VEVENT",i))!=-1)
-  {
-    int end=data.indexOf("END:VEVENT",i);
-    String ev=data.substring(i,end);
-
-    int dI=ev.indexOf("DTSTART:");
-    int sI=ev.indexOf("SUMMARY:");
-
-    if(dI!=-1 && sI!=-1)
-    {
-      String date=ev.substring(dI+8,dI+16);
-      String txt=ev.substring(sI+8,ev.indexOf("\n",sI));
-
-      int y=date.substring(0,4).toInt();
-      int m=date.substring(4,6).toInt();
-      int d=date.substring(6,8).toInt();
-
-      if(y==year && m==month && eventCount<MAX_EVENTS)
-      {
-        events[eventCount++]={d,txt};
-      }
-    }
-    i=end;
-  }
+body {
+  font-family: Arial, sans-serif;
+  background: #f2f2f2;
+  margin: 0;
 }
 
-*/
+.container {
+  max-width: 420px;
+  margin: auto;
+  padding: 15px;
+}
+
+.card {
+  background: white;
+  padding: 15px;
+  margin-bottom: 15px;
+  border-radius: 12px;
+  box-shadow: 0 3px 8px rgba(0,0,0,0.15);
+}
+
+h2 {
+  text-align: center;
+  margin-bottom: 20px;
+}
+
+h3 {
+  margin-top: 0;
+}
+
+input {
+  width: 100%;
+  padding: 10px;
+  margin-top: 6px;
+  margin-bottom: 10px;
+  border-radius: 6px;
+  border: 1px solid #ccc;
+  font-size: 14px;
+}
+
+button {
+  width: 100%;
+  padding: 12px;
+  background: #007BFF;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 16px;
+}
+
+button:hover {
+  background: #0056b3;
+}
+
+.wifi {
+  background: #eee;
+  padding: 8px 10px;
+  border-radius: 6px;
+  margin-bottom: 6px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.wifi a {
+  color: red;
+  text-decoration: none;
+  font-weight: bold;
+}
+
+.small {
+  font-size: 12px;
+  color: #666;
+}
+
+</style>
+</head>
+
+<body>
+
+<div class="container">
+
+<h2>📅 E-ink Kalendář</h2>
+
+<!-- WIFI -->
+<div class="card">
+<h3>📶 WiFi sítě</h3>
+)rawliteral";
+
+    html += wifiList;
+
+    html += R"rawliteral(
+
+<form action="/add">
+<input name="ssid" placeholder="SSID">
+<input name="pass" placeholder="Heslo">
+<button>Přidat WiFi</button>
+</form>
+
+</div>
+
+<!-- LOKALITA + ICS -->
+<div class="card">
+<h3>📍 Nastavení</h3>
+
+<form action="/save">
+
+<input name="lat" placeholder="Latitude">
+<div class="small">např. 49.1951</div>
+
+<input name="lon" placeholder="Longitude">
+<div class="small">např. 16.6068</div>
+
+<input name="ics" placeholder="ICS URL">
+<div class="small">Google kalendář – veřejný odkaz</div>
+
+<button>Uložit nastavení</button>
+
+</form>
+
+</div>
+
+<!-- RESTART -->
+<div class="card">
+
+<form action="/restart">
+<button>Restart zařízení</button>
+</form>
+
+</div>
+
+</div>
+
+</body>
+</html>
+)rawliteral";
+
+    return html;
+}
+
+
+// ===== NVS =====
+void loadConfig() 
+{
+    prefs.begin("cfg", true);
+    char key[8];
+    for (int i = 0; i < 5; i++) 
+    {
+        sprintf(key, "s%d", i);
+        ssidList[i] = prefs.getString(key, "");
+        sprintf(key, "p%d", i);
+        passList[i] = prefs.getString(key, "");
+        Serial.println("WiFi[" + String(i) + "] = " + ssidList[i]);
+    }
+    lat = prefs.getFloat("lat", 0);
+    lon = prefs.getFloat("lon", 0);
+    ics = prefs.getString("ics", "");
+    Serial.println("LAT: " + String(lat));
+    Serial.println("LON: " + String(lon));
+    Serial.println("ICS: " + ics);
+    prefs.end();
+}
+
+void saveWiFi(int id, String s, String p) 
+{
+    prefs.begin("cfg", false);
+    char key[8];
+    sprintf(key, "s%d", id);
+    prefs.putString(key, s);
+    sprintf(key, "p%d", id);
+    prefs.putString(key, p);
+    prefs.end();
+    Serial.println("SAVING:");
+    Serial.println("SSID: " + s);
+    Serial.println("PASS: " + p);    
+}
+
+
+void deleteWiFi(int id) 
+{
+    prefs.begin("cfg", false);
+    char key[8];
+    sprintf(key, "s%d", id);
+    prefs.remove(key);
+    sprintf(key, "p%d", id);
+    prefs.remove(key);
+    prefs.end();
+}
+
+// ===== WIFI CONNECT =====
+bool connectBestWiFi() 
+{
+    WiFi.mode(WIFI_STA);
+    WiFi.disconnect(true);
+    delay(200);
+    int n = WiFi.scanNetworks();
+    Serial.println("Networks found: " + String(n));
+    String bestSSID = "";
+    String bestPASS = "";
+    int bestRSSI = -1000;
+    for (int i = 0; i < n; i++) 
+    {
+        String found = WiFi.SSID(i);
+        int rssi = WiFi.RSSI(i);
+        Serial.println("SSID: " + found + " RSSI: " + String(rssi));
+        for (int j = 0; j < 5; j++) 
+        {
+
+            if (found == ssidList[j] && rssi > bestRSSI) 
+            {
+                bestSSID = ssidList[j];
+                bestPASS = passList[j];
+                bestRSSI = rssi;
+            }
+        }
+    }
+    if (bestSSID == "") 
+    {
+        Serial.println("No network found in saved!");
+        return false;
+    }
+    Serial.println("Connecting to WiFi: " + bestSSID);
+    WiFi.begin(bestSSID.c_str(), bestPASS.c_str());
+    int tries = 0;
+    while (WiFi.status() != WL_CONNECTED && tries < 20) 
+    {
+        delay(500);
+        Serial.print(".");
+        tries++;
+    }
+    Serial.println();
+    Serial.println("Status: " + String(WiFi.status()));
+    return WiFi.status() == WL_CONNECTED;
+}
+
+
+bool hasConfig() 
+{
+    prefs.begin("cfg", true);
+    String test = prefs.getString("s0", "");
+    prefs.end();
+    return test != "";
+}
+
+
+// ===== CONFIG MODE =====
+void startConfig() 
+{
+    WiFi.softAP("Kalendář-Setup");
+    server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
+        request->send(200, "text/html", htmlPage());
+    });
+    server.on("/add", HTTP_GET, [](AsyncWebServerRequest *request) 
+    {
+        if (request->hasParam("ssid") && request->hasParam("pass")) 
+        {
+            String s = request->getParam("ssid")->value();
+            String p = request->getParam("pass")->value();
+            for (int i = 0; i < 5; i++) 
+            {
+                if (ssidList[i].length() == 0) 
+                {
+                    saveWiFi(i, s, p);
+                    loadConfig();
+                    break;
+                }
+            }
+        }
+        request->send(200, "text/html; charset=UTF-8",
+        "<html><meta charset='UTF-8'><body>Přidáno ✔<br><a href='/'>Zpět</a></body></html>");
+    });
+    server.on("/del", HTTP_GET, [](AsyncWebServerRequest *request) 
+    {
+        int id = request->getParam("id")->value().toInt();
+        deleteWiFi(id);
+        loadConfig();
+        request->redirect("/");
+    });
+    server.on("/save", HTTP_GET, [](AsyncWebServerRequest *request) 
+    {
+        float la = request->getParam("lat")->value().toFloat();
+        float lo = request->getParam("lon")->value().toFloat();
+        String i = request->getParam("ics")->value();
+        saveConfig(la, lo, i);
+        request->send(200, "text/html; charset=UTF-8", 
+        "<html><meta charset='UTF-8'><body>Uloženo ✔, restart...</body></html>");
+        delay(200);
+        ESP.restart();   
+    });
+    server.on("/restart", HTTP_GET, [](AsyncWebServerRequest *request) 
+    {
+        request->send(200, "text/html; charset=UTF-8", "Restartuji...");
+        delay(200);
+        ESP.restart();
+    });    
+    server.begin();
+    while (true) delay(10);
+}
+
+void saveConfig(float la, float lo, String i) 
+{
+    prefs.begin("cfg", false);
+    prefs.putFloat("lat", la);
+    prefs.putFloat("lon", lo);
+    prefs.putString("ics", i);
+    prefs.end();
+}
+
+void clearConfig()
+{
+  prefs.begin("cfg", false);
+  prefs.clear();
+  prefs.end();    
+  delay(500);
+  ESP.restart();  
+}
+
+// ===== UPDATE =====
+void doUpdate() 
+{
+    Serial.println("=== START ===");
+    SPI.begin(12,-1,11,CS_PIN);
+    Serial.println("SPI OK");
+    display.init(115200);
+    display.setRotation(1);
+    Serial.println("Display OK");
+    Serial.println("Connecting WiFi...");
+    loadConfig();
+    if (!connectBestWiFi()) 
+    {
+        Serial.println("WiFi fail → sleep");
+        delay(1000);
+        goToSleep();
+    }
+    Serial.println("WiFi OK");
+    Serial.println("Sync time...");
+    MoonCalc::initTime();
+    while (!getLocalTime(&timeinfo)) delay(200);
+    int y=timeinfo.tm_year+1900;
+    int m=timeinfo.tm_mon+1;
+    int d=timeinfo.tm_mday;
+    int h=timeinfo.tm_hour;
+    int min=timeinfo.tm_min;
+    Serial.print("Date: ");
+    Serial.print(d); Serial.print(".");
+    Serial.print(m); Serial.print(".");
+    Serial.println(y);
+    Serial.print("Time: ");
+    Serial.print(h); Serial.print(":");
+    Serial.println(min);
+    Serial.println("Downloading ICS...");
+    if (ical.fetchICS(ics)) 
+    {
+      Serial.println("ICS donwloaded");
+    } 
+    else
+    {
+      Serial.println("ICS downloading error");
+    }
+    Serial.println("Drawing...");
+    drawAll(timeinfo);
+    Serial.println("Drawing DONE");
+    display.hibernate();
+    goToSleep();
+}
+
+
+bool hasWiFi() 
+{
+    for (int i = 0; i < 5; i++) 
+    {
+        if (ssidList[i] != "") return true;
+    }
+    return false;
+}
+
+
+// ===== SLEEP =====
+void goToSleep() 
+{
+    Serial.println("GOOD NIGHT...");
+    delay(200);
+    Serial.end();
+    esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
+    esp_sleep_enable_timer_wakeup(3600ULL * 1000000ULL);
+    esp_sleep_enable_ext1_wakeup(
+        (1ULL << RESET_PIN),
+        ESP_EXT1_WAKEUP_ANY_LOW
+    );
+    esp_deep_sleep_start();
+}
+
 
 void printCZ(const char* text) 
 {
   while (*text) 
   {
     uint8_t c = (uint8_t)*text;
-
     if (c >= 32 && c <= 126) 
     {
       display.write(c - 32);
     }
-
     else if (c == 0xC3) 
     {
       text++;
       switch ((uint8_t)*text) 
       {
-        // malé
         case 0xA1: display.write(95); break;  // á
         case 0xA9: display.write(98); break;  // é
         case 0xAD: display.write(100); break; // í
         case 0xB3: display.write(102); break; // ó
         case 0xBA: display.write(106); break; // ú
         case 0xBD: display.write(108); break; // ý
-
-        // velké
         case 0x81: display.write(110); break; // Á
         case 0x89: display.write(113); break; // É
         case 0x8D: display.write(115); break; // Í
@@ -390,39 +717,31 @@ void printCZ(const char* text)
         case 0x9D: display.write(123); break; // Ý
       }
     }
-
     else if (c == 0xC4) 
     {
       text++;
       switch ((uint8_t)*text) 
       {
-        // malé
         case 0x8D: display.write(96); break;  // č
         case 0x8F: display.write(97); break;  // ď
         case 0x9B: display.write(99); break;  // ě
         case 0x88: display.write(101); break; // ň
-
-        // velké
         case 0x8C: display.write(111); break; // Č
         case 0x8E: display.write(112); break; // Ď
         case 0x9A: display.write(114); break; // Ě
         case 0x87: display.write(116); break; // Ň
       }
     }
-
     else if (c == 0xC5) 
     {
       text++;
       switch ((uint8_t)*text) 
       {
-        // malé
         case 0x99: display.write(103); break; // ř
         case 0xA1: display.write(104); break; // š
         case 0xA5: display.write(105); break; // ť
         case 0xBE: display.write(109); break; // ž
         case 0xAF: display.write(107); break; // ů
-
-        // velké
         case 0x98: display.write(118); break; // Ř
         case 0xA0: display.write(119); break; // Š
         case 0xA4: display.write(120); break; // Ť
@@ -430,7 +749,6 @@ void printCZ(const char* text)
         case 0xAE: display.write(122); break; // Ů
       }
     }
-
     text++;
   }
 }
@@ -438,20 +756,21 @@ void printCZ(const char* text)
 
 int getTextHeightCZ(const char* text, const GFXfont* font)
 {
-  int maxAbove = 0; // nad baseline
-  int maxBelow = 0; // pod baseline
+  int maxAbove = 0;
+  int maxBelow = 0;
   while (*text)
   {
     uint8_t c = (uint8_t)*text;
     uint8_t index = 0;
-
-    if (c >= 32 && c <= 126) {
+    if (c >= 32 && c <= 126) 
+    {
       index = c - 32;
     }
-
-    else if (c == 0xC3) {
+    else if (c == 0xC3) 
+    {
       text++;
-      switch ((uint8_t)*text) {
+      switch ((uint8_t)*text) 
+      {
         case 0xA1: index = 95; break;
         case 0xA9: index = 98; break;
         case 0xAD: index = 100; break;
@@ -467,10 +786,11 @@ int getTextHeightCZ(const char* text, const GFXfont* font)
         case 0x9D: index = 123; break;
       }
     }
-
-    else if (c == 0xC4) {
+    else if (c == 0xC4) 
+    {
       text++;
-      switch ((uint8_t)*text) {
+      switch ((uint8_t)*text) 
+      {
         case 0x8D: index = 96; break;
         case 0x8F: index = 97; break;
         case 0x9B: index = 99; break;
@@ -482,8 +802,8 @@ int getTextHeightCZ(const char* text, const GFXfont* font)
         case 0x87: index = 116; break;
       }
     }
-
-    else if (c == 0xC5) {
+    else if (c == 0xC5) 
+    {
       text++;
       switch ((uint8_t)*text) {
         case 0x99: index = 103; break;
@@ -491,7 +811,6 @@ int getTextHeightCZ(const char* text, const GFXfont* font)
         case 0xA5: index = 105; break;
         case 0xBE: index = 109; break;
         case 0xAF: index = 107; break;
-
         case 0x98: index = 118; break;
         case 0xA0: index = 119; break;
         case 0xA4: index = 120; break;
@@ -502,9 +821,7 @@ int getTextHeightCZ(const char* text, const GFXfont* font)
     const GFXglyph *glyph = &font->glyph[index];
     int yOffset = glyph->yOffset;
     int h = glyph->height;
-    // nad baseline
     int above = -yOffset;
-    // pod baseline
     int below = h + yOffset;
     if (above > maxAbove) maxAbove = above;
     if (below > maxBelow) maxBelow = below;
@@ -513,28 +830,29 @@ int getTextHeightCZ(const char* text, const GFXfont* font)
   return maxAbove + maxBelow;
 }
 
+
 int getTextWidthCZ(const char* text, const GFXfont* font) 
 {
   int width = 0;
-
-  while (*text) {
+  while (*text) 
+  {
     uint8_t c = (uint8_t)*text;
     uint8_t index = 0;
-
-    if (c >= 32 && c <= 126) {
+    if (c >= 32 && c <= 126) 
+    {
       index = c - 32;
     }
-
-    else if (c == 0xC3) {
+    else if (c == 0xC3) 
+    {
       text++;
-      switch ((uint8_t)*text) {
+      switch ((uint8_t)*text) 
+      {
         case 0xA1: index = 95; break;
         case 0xA9: index = 98; break;
         case 0xAD: index = 100; break;
         case 0xB3: index = 102; break;
         case 0xBA: index = 106; break;
         case 0xBD: index = 108; break;
-
         case 0x81: index = 110; break;
         case 0x89: index = 113; break;
         case 0x8D: index = 115; break;
@@ -543,31 +861,31 @@ int getTextWidthCZ(const char* text, const GFXfont* font)
         case 0x9D: index = 123; break;
       }
     }
-
-    else if (c == 0xC4) {
+    else if (c == 0xC4) 
+    {
       text++;
-      switch ((uint8_t)*text) {
+      switch ((uint8_t)*text) 
+      {
         case 0x8D: index = 96; break;
         case 0x8F: index = 97; break;
         case 0x9B: index = 99; break;
         case 0x88: index = 101; break;
-
         case 0x8C: index = 111; break;
         case 0x8E: index = 112; break;
         case 0x9A: index = 114; break;
         case 0x87: index = 116; break;
       }
     }
-
-    else if (c == 0xC5) {
+    else if (c == 0xC5) 
+    {
       text++;
-      switch ((uint8_t)*text) {
+      switch ((uint8_t)*text) 
+      {
         case 0x99: index = 103; break;
         case 0xA1: index = 104; break;
         case 0xA5: index = 105; break;
         case 0xBE: index = 109; break;
         case 0xAF: index = 107; break;
-
         case 0x98: index = 118; break;
         case 0xA0: index = 119; break;
         case 0xA4: index = 120; break;
@@ -583,8 +901,7 @@ int getTextWidthCZ(const char* text, const GFXfont* font)
 }
 
 
-bool CalcSunFromAPI(double lat, double lon,
-                          String &sunriseStr, String &sunsetStr)
+bool CalcSunFromAPI(double lat, double lon, String &sunriseStr, String &sunsetStr)
 {
   HTTPClient http;
   String url = "https://api.open-meteo.com/v1/forecast?";
@@ -605,7 +922,6 @@ bool CalcSunFromAPI(double lat, double lon,
   if (err) return false;
   String sunrise = doc["daily"]["sunrise"][0];
   String sunset  = doc["daily"]["sunset"][0];
-  // formát: 2026-03-29T06:44
   sunriseStr = sunrise.substring(11,16);
   sunsetStr  = sunset.substring(11,16);
   return true;
@@ -626,11 +942,9 @@ static String toHHMM(double t)
 String formatTime(String input)
 {
   int colon = input.indexOf(':');
-  if (colon == -1) return input; // když tam není :, vrátí původní
-
+  if (colon == -1) return input;
   int hour = input.substring(0, colon).toInt();
   int minute = input.substring(colon + 1).toInt();
-
   char buffer[6];
   sprintf(buffer, "%02d:%02d", hour, minute);
   return String(buffer);
@@ -648,16 +962,11 @@ String twoDigits(int value)
   return (value < 10) ? "0" + String(value) : String(value);
 }
 
-void drawTextCentered(
-    const Rect& r,
-    const char* text,
-    int textW,
-    int textH
-)
+
+void drawTextCentered(const Rect& r, const char* text, int textW, int textH)
 {
     int x = r.x + (r.w - textW) / 2;
-    int y = r.y + (r.h - textH) / 2 + textH; // baseline!
-
+    int y = r.y + (r.h - textH) / 2 + textH;
     display.setCursor(x, y);
     printCZ(text);
 }
@@ -671,17 +980,14 @@ bool getWeatherForDay(float lat, float lon, tm timeinfo, DayResult &out)
           timeinfo.tm_year + 1900,
           timeinfo.tm_mon + 1,
           timeinfo.tm_mday);
-
   String url = "https://api.open-meteo.com/v1/forecast?";
   url += "latitude=" + String(lat, 6);
   url += "&longitude=" + String(lon, 6);
-  url += "&daily=temperature_2m_max,temperature_2m_min,weathercode,precipitation_sum,windspeed_10m_max";
+  url += "&daily=temperature_2m_max,temperature_2m_min,weathercode,precipitation_sum,precipitation_probability_max,precipitation_hours,windspeed_10m_max";
   url += "&forecast_days=7&timezone=auto";
-
   HTTPClient http;
   http.begin(url);
   http.setTimeout(15000);
-
   int httpCode = http.GET();
   if (httpCode != 200)
   {
@@ -689,107 +995,121 @@ bool getWeatherForDay(float lat, float lon, tm timeinfo, DayResult &out)
     Serial.println(httpCode);
     http.end();
     return false;
-  }  
-
-
+  }
   String payload = http.getString();
   http.end();
-
-  StaticJsonDocument<512> filter;
+  StaticJsonDocument<768> filter;
   filter["daily"]["time"] = true;
   filter["daily"]["temperature_2m_max"] = true;
   filter["daily"]["temperature_2m_min"] = true;
   filter["daily"]["weathercode"] = true;
   filter["daily"]["precipitation_sum"] = true;
+  filter["daily"]["precipitation_probability_max"] = true;
+  filter["daily"]["precipitation_hours"] = true;
   filter["daily"]["windspeed_10m_max"] = true;
-
-  StaticJsonDocument<2048> doc;
-
+  StaticJsonDocument<3072> doc;
   if (deserializeJson(doc, payload, DeserializationOption::Filter(filter))) 
   {
     Serial.println("GetWeatherForDay > deserializeJson chyba!");
     return false;
   }
-
   JsonArray time = doc["daily"]["time"];
   JsonArray tMax = doc["daily"]["temperature_2m_max"];
   JsonArray tMin = doc["daily"]["temperature_2m_min"];
   JsonArray wCode = doc["daily"]["weathercode"];
   JsonArray rain = doc["daily"]["precipitation_sum"];
+  JsonArray rainProb = doc["daily"]["precipitation_probability_max"];
+  JsonArray rainHours = doc["daily"]["precipitation_hours"];
   JsonArray wind = doc["daily"]["windspeed_10m_max"];
-
   for (int i = 0; i < time.size(); i++) 
   {
-
     if (strcmp(time[i], targetDate) == 0) 
     {
-
       out.tMin = tMin[i];
       out.tMax = tMax[i];
-
       int code = wCode[i];
       float r = rain[i];
+      float prob = rainProb[i];
+      float hours = rainHours[i];
       float w_kmh = wind[i];
-
-      // ===== ICON (číslo) =====
-      if (code == 0) out.icon = ICON_SUNNY;
-
+      bool willRain = false;
+      if (prob >= 30.0 && hours > 0 && r > 0.2)
+      {
+        willRain = true;
+      }
+      if (code == 0)
+      {
+        out.icon = ICON_SUNNY;
+      }
       else if (code <= 2)
-        out.icon = (r > 0.5) ? ICON_SHOWERS : ICON_PARTLY;
-
+      {
+        out.icon = willRain ? ICON_SHOWERS : ICON_PARTLY;
+      }
       else if (code == 3)
-        out.icon = (r > 0.5) ? ICON_SHOWERS : ICON_CLOUDY;
-
+      {
+        out.icon = willRain ? ICON_SHOWERS : ICON_CLOUDY;
+      }
       else if (code == 45 || code == 48)
+      {
         out.icon = ICON_FOG;
-
+      }
       else if (code >= 51 && code <= 67)
-        out.icon = ICON_RAIN;
-
+      {
+        out.icon = willRain ? ICON_RAIN : ICON_CLOUDY;
+      }
       else if (code >= 71 && code <= 77)
+      {
         out.icon = ICON_SNOW;
-
+      }
       else if (code >= 80 && code <= 82)
-        out.icon = ICON_SHOWERS;
-
+      {
+        out.icon = willRain ? ICON_SHOWERS : ICON_CLOUDY;
+      }
       else if (code == 85 || code == 86)
+      {
         out.icon = ICON_SNOW;
-
+      }
       else if (code >= 95)
+      {
         out.icon = ICON_STORM;
-
+      }
       else
+      {
         out.icon = ICON_UNKNOWN;
-
-      // ===== WIND (číslo) =====
+      }
       float w_ms = w_kmh / 3.6;
-
       if (w_ms < 2.0) out.wind = WIND_NONE;
       else if (w_ms < 5.0) out.wind = WIND_LOW;
       else if (w_ms < 10.0) out.wind = WIND_MEDIUM;
       else out.wind = WIND_HIGH;
-
-      if (r < 0.2) out.rainIntensity = RAIN_NONE;
-      else if (r < 2.0) out.rainIntensity = RAIN_LOW;
-      else if (r < 10.0) out.rainIntensity = RAIN_MEDIUM;
-      else out.rainIntensity = RAIN_HIGH;
-
+      if (!willRain)
+      {
+        out.rainIntensity = RAIN_NONE;
+      }
+      else
+      {
+        if (r < 2.0) out.rainIntensity = RAIN_LOW;
+        else if (r < 10.0) out.rainIntensity = RAIN_MEDIUM;
+        else out.rainIntensity = RAIN_HIGH;
+      }
+      Serial.print("Rain mm: "); Serial.println(r);
+      Serial.print("Rain prob: "); Serial.println(prob);
+      Serial.print("Rain hours: "); Serial.println(hours);
+      Serial.print("Will rain: "); Serial.println(willRain);
       out.valid = true;
       return true;
     }
   }
-
-  return true;
+  return false;
 }
 
 
 void addDays(struct tm &date, int days)
 {
-    time_t t = mktime(&date);   // převede na timestamp
-    t += days * 86400;          // + dny (v sekundách)
-    localtime_r(&t, &date);     // zpět do struct tm
+    time_t t = mktime(&date);
+    t += days * 86400;
+    localtime_r(&t, &date);
 }
-
 
 
 void drawRow(const Rect& rect, const struct tm& date, const char* event1, const char* event2)
@@ -798,25 +1118,19 @@ void drawRow(const Rect& rect, const struct tm& date, const char* event1, const 
   const char* daysCZ[] = {
     "Ne", "Po", "Út", "St", "Čt", "Pá", "So"
   };  
-
   int leftW = (rect.w * 15) / 100;
   partRect[0] = { rect.x, rect.y, leftW, rect.h };
-
   Rect topRect;
   Rect bottomRect;
-
   int split = (partRect[0].h * 60) / 100;
-
   topRect.x = partRect[0].x;
   topRect.y = partRect[0].y;
   topRect.w = partRect[0].w;
   topRect.h = split;
-
   bottomRect.x = partRect[0].x;
   bottomRect.y = partRect[0].y + split;
   bottomRect.w = partRect[0].w;
   bottomRect.h = partRect[0].h - split;
-
   display.setTextColor(GxEPD_BLACK);
   display.setFont(&CZUbuntuBold12);
   char dayStr[4];
@@ -824,25 +1138,20 @@ void drawRow(const Rect& rect, const struct tm& date, const char* event1, const 
   int dayHeightFont = getTextHeightCZ("A", &CZUbuntuBold12);
   int dayWidthFont = getTextWidthCZ(dayStr, &CZUbuntuBold12);
   drawTextCentered(topRect, dayStr, dayWidthFont, dayHeightFont);  
-
   display.setTextColor(GxEPD_BLACK);
   display.setFont(&Exo_SemiBold9);
   int daynameHeightFont = getTextHeightCZ("A", &Exo_SemiBold9);
   int daynameWidthFont = getTextWidthCZ(daysCZ[date.tm_wday], &Exo_SemiBold9);
   drawTextCentered(bottomRect, daysCZ[date.tm_wday], daynameWidthFont, daynameHeightFont);
-
   Rect right;
   right.x = rect.x + leftW;
   right.y = rect.y;
   right.w = rect.w - leftW;
   right.h = rect.h;
-
   int topH = ICONWIDTH + 2;
   int remainingH = right.h - topH;
-
   int midH = remainingH / 2;
   int botH = remainingH - midH;
-
   partRect[1] = 
   {
     right.x,
@@ -850,7 +1159,6 @@ void drawRow(const Rect& rect, const struct tm& date, const char* event1, const 
     right.w,
     topH
   };
-
   partRect[2] = 
   {
     right.x,
@@ -858,7 +1166,6 @@ void drawRow(const Rect& rect, const struct tm& date, const char* event1, const 
     right.w,
     midH
   };
-
   partRect[3] = 
   {
     right.x,
@@ -866,26 +1173,19 @@ void drawRow(const Rect& rect, const struct tm& date, const char* event1, const 
     right.w,
     botH
   };
-
   display.drawRect(rect.x, rect.y, rect.w, rect.h, GxEPD_RED);
   display.drawRect(partRect[0].x, partRect[0].y,
                    partRect[0].w, partRect[0].h,
                    GxEPD_RED);
-
   display.setTextColor(GxEPD_BLACK);
   display.setFont(&MarkaziText_Regular12);
-
   int event1HeightFont = getTextHeightCZ("A", &MarkaziText_Regular12);
   int event1WidthFont = getTextWidthCZ(event1, &MarkaziText_Regular12);
-
-  // první řádek
   display.setCursor(
       partRect[2].x + 2,
       partRect[2].y + event1HeightFont
   );
   printCZ(event1);
-
-  // druhý řádek
   int event2HeightFont = getTextHeightCZ("A", &MarkaziText_Regular12);
   int event2WidthFont = getTextWidthCZ(event2, &MarkaziText_Regular12);
   display.setCursor(
@@ -893,9 +1193,8 @@ void drawRow(const Rect& rect, const struct tm& date, const char* event1, const 
       partRect[3].y + event2HeightFont
   );
   printCZ(event2);
-
   DayResult dayRes;
-  if (getWeatherForDay(LAT, LON, date, dayRes))
+  if (getWeatherForDay(lat, lon, date, dayRes))
   {
     switch (dayRes.icon) 
     {
@@ -945,58 +1244,52 @@ void drawRow(const Rect& rect, const struct tm& date, const char* event1, const 
         break;
       }
     }    
-
-
     switch (dayRes.wind) 
     {
       case WIND_NONE:
       {
-        display.drawBitmap(partRect[1].x + ICONWIDTH + 2, partRect[1].y+1, windpower0/*nonewind*/, ICONWIDTH, ICONWIDTH, GxEPD_BLACK);    
+        display.drawBitmap(partRect[1].x + ICONWIDTH + 2, partRect[1].y+1, windpower0, ICONWIDTH, ICONWIDTH, GxEPD_BLACK);    
         break;
       }
       case WIND_LOW:
       {
-        display.drawBitmap(partRect[1].x + ICONWIDTH + 2, partRect[1].y+1, windpower1/*lowwind*/, ICONWIDTH, ICONWIDTH, GxEPD_BLACK);    
+        display.drawBitmap(partRect[1].x + ICONWIDTH + 2, partRect[1].y+1, windpower1, ICONWIDTH, ICONWIDTH, GxEPD_BLACK);    
         break;
       }
       case WIND_MEDIUM:
       {
-        display.drawBitmap(partRect[1].x + ICONWIDTH + 2, partRect[1].y+1, windpower2/*mediumwind*/, ICONWIDTH, ICONWIDTH, GxEPD_BLACK);    
+        display.drawBitmap(partRect[1].x + ICONWIDTH + 2, partRect[1].y+1, windpower2, ICONWIDTH, ICONWIDTH, GxEPD_BLACK);    
         break;
       }
       case WIND_HIGH:
       {
-        display.drawBitmap(partRect[1].x + ICONWIDTH + 2, partRect[1].y+1, windpower3/*highwind*/, ICONWIDTH, ICONWIDTH, GxEPD_BLACK);    
+        display.drawBitmap(partRect[1].x + ICONWIDTH + 2, partRect[1].y+1, windpower3, ICONWIDTH, ICONWIDTH, GxEPD_BLACK);    
         break;
       }
     }
-
-
     switch (dayRes.rainIntensity) 
     {
       case RAIN_NONE:
       {
-        display.drawBitmap(partRect[1].x + (ICONWIDTH*2) + 2, partRect[1].y+1, drop0/*nonewind*/, ICONWIDTH, ICONWIDTH, GxEPD_BLACK);    
+        display.drawBitmap(partRect[1].x + (ICONWIDTH*2) + 2, partRect[1].y+1, drop0, ICONWIDTH, ICONWIDTH, GxEPD_BLACK);    
         break;
       }
       case RAIN_LOW:
       {
-        display.drawBitmap(partRect[1].x + (ICONWIDTH*2) + 2, partRect[1].y+1, drop1/*lowwind*/, ICONWIDTH, ICONWIDTH, GxEPD_BLACK);    
+        display.drawBitmap(partRect[1].x + (ICONWIDTH*2) + 2, partRect[1].y+1, drop1, ICONWIDTH, ICONWIDTH, GxEPD_BLACK);    
         break;
       }
       case RAIN_MEDIUM:
       {
-        display.drawBitmap(partRect[1].x + (ICONWIDTH*2) + 2, partRect[1].y+1, drop2/*mediumwind*/, ICONWIDTH, ICONWIDTH, GxEPD_BLACK);    
+        display.drawBitmap(partRect[1].x + (ICONWIDTH*2) + 2, partRect[1].y+1, drop2, ICONWIDTH, ICONWIDTH, GxEPD_BLACK);    
         break;
       }
       case RAIN_HIGH:
       {
-        display.drawBitmap(partRect[1].x + (ICONWIDTH*2) + 2, partRect[1].y+1, drop3/*highwind*/, ICONWIDTH, ICONWIDTH, GxEPD_BLACK);    
+        display.drawBitmap(partRect[1].x + (ICONWIDTH*2) + 2, partRect[1].y+1, drop3, ICONWIDTH, ICONWIDTH, GxEPD_BLACK);    
         break;
       }
     }
-
-    // teploty
     display.setTextColor(GxEPD_BLACK);
     display.setFont(&MarkaziText_SemiBold12);
     int tempHeightFont = getTextHeightCZ("A", &MarkaziText_SemiBold12);
@@ -1017,7 +1310,6 @@ void drawAll(struct tm timeinfo)
   {
     "LEDEN","ÚNOR","BŘEZEN","DUBEN","KVĚTEN","ČERVEN","ČERVENEC","SRPEN","ZÁŘÍ","ŘÍJEN","LISTOPAD","PROSINEC"
   };
-
   display.firstPage();
   do
   {
@@ -1031,8 +1323,6 @@ void drawAll(struct tm timeinfo)
     display.setTextColor(GxEPD_BLACK);
     display.setCursor(xPosMonthText, yPosMonthText);
     printCZ(namemonth[timeinfo.tm_mon]);
-
-    //display.setFont(&FreeSans18pt7b);
     display.setFont(&Roboto_Medium20);
     int16_t _x1, _y1;
     uint16_t _w, _h;
@@ -1045,11 +1335,9 @@ void drawAll(struct tm timeinfo)
     display.setTextColor(GxEPD_RED);
     display.setCursor(xPosDayText, yPosDayText);
     display.print(String(timeinfo.tm_mday));
-
     int yPosIcons = yPosDayText-_h;
-
     display.drawBitmap(0, yPosIcons, sunIcon, ICONWIDTH, ICONWIDTH, GxEPD_BLACK);
-    if (MoonCalc::getMoonStatus(LAT, LON))
+    if (MoonCalc::getMoonStatus(lat, lon))
     {
       display.drawBitmap(display.width()-24, yPosIcons, isMoon, ICONWIDTH, ICONWIDTH, GxEPD_BLACK);    
     }
@@ -1057,19 +1345,14 @@ void drawAll(struct tm timeinfo)
     {
       display.drawBitmap(display.width()-24, yPosIcons, noMoon, ICONWIDTH, ICONWIDTH, GxEPD_BLACK);    
     }
-
     int y=timeinfo.tm_year+1900;
     int m=timeinfo.tm_mon+1;
     int d=timeinfo.tm_mday;
     int hour = timeinfo.tm_hour;
     int min = timeinfo.tm_min;
-
-    //display.setFont(&FreeSerif9pt7b);
     display.setFont(&Roboto_Medium);
-
     String srStr, ssStr;
-    //CalcSunFromAPI(LAT, LON, srStr, ssStr);
-    MoonCalc::CalcSun(LAT, LON, srStr, ssStr);
+    MoonCalc::CalcSun(lat, lon, srStr, ssStr);
     int16_t _x2, _y2;
     uint16_t _w2, _h2;
     display.getTextBounds(srStr, 0, 0, &_x2, &_y2, &_w2, &_h2);
@@ -1081,29 +1364,24 @@ void drawAll(struct tm timeinfo)
     display.setTextColor(GxEPD_BLACK);
     display.setCursor(xPosSunText, yPosIcons + (_h2 * 2) + (_h2 * 40 / 100));
     display.print(ssStr);
-
     String riseStr, setStr;
-    MoonCalc::compute(LAT, LON, riseStr, setStr);
-
-    bool isUp = MoonCalc::getMoonStatus(LAT, LON);
-    // 🔥 jen když ještě nevyšel
+    MoonCalc::compute(lat, lon, riseStr, setStr);
+    bool isUp = MoonCalc::getMoonStatus(lat, lon);
     if (!isUp)
     {
-      // získej "dnešní" východ tak, že to spočítáš v minulosti
       time_t now = time(nullptr) - 12 * 3600;
       struct tm t;
       localtime_r(&now, &t);
       int y = t.tm_year + 1900;
       int m = t.tm_mon + 1;
       int d = t.tm_mday;
-      // 🔥 ručně spočítáš jen dnešní východ
       double prev = MoonCalc::moonAltitude(
-          MoonCalc::julianDate(y,m,d,0), LAT, LON);
+          MoonCalc::julianDate(y,m,d,0), lat, lon);
       double todayRise = -1;
       for(double h=0.05; h<=24; h+=0.05)
       {
         double alt = MoonCalc::moonAltitude(
-            MoonCalc::julianDate(y,m,d,h), LAT, LON);
+            MoonCalc::julianDate(y,m,d,h), lat, lon);
         if(prev < -0.3 && alt >= -0.3)
         {
           double h0 = h - 0.05;
@@ -1111,7 +1389,6 @@ void drawAll(struct tm timeinfo)
           todayRise = h0 + frac * 0.05;
           break;
         }
-
         prev = alt;
       }
       if (todayRise >= 0)
@@ -1121,7 +1398,6 @@ void drawAll(struct tm timeinfo)
         riseStr = MoonCalc::toHHMM(rise);
       }
     }
-
     int xPosMoonText = display.width() - ICONWIDTH - spacing;
     display.setTextColor(GxEPD_RED);
     display.setCursor(xPosMoonText-_w2, yPosIcons + _h2);
@@ -1129,9 +1405,7 @@ void drawAll(struct tm timeinfo)
     display.setTextColor(GxEPD_BLACK);
     display.setCursor(xPosMoonText-_w2, yPosIcons + (_h2 * 2) + (_h2 * 40 / 100));
     display.print(setStr);
-
     int yPosNamedayText = yPosIcons + (_h2 * 2) + (_h2 * 40 / 100) + ((display.height()*5)/100);
-
     display.setTextColor(GxEPD_BLACK);
     display.setFont(&CZSpaceMonoRegular12);
     String namedayStr = String(getNameDayCZ(timeinfo.tm_mday, timeinfo.tm_mon+1, timeinfo.tm_year+1900));
@@ -1140,12 +1414,9 @@ void drawAll(struct tm timeinfo)
     int xPosNamedayText = (display.width() - widthNamedayText) / 2;
     display.setCursor(xPosNamedayText, yPosNamedayText);
     printCZ(namedayStr.c_str());
-
     int yPosHeadLine = yPosNamedayText + ((display.height()*5)/100);
-
     display.drawLine(0, yPosHeadLine - 3, display.width(), yPosHeadLine -3, GxEPD_BLACK);
     display.drawLine(0, yPosHeadLine, display.width(), yPosHeadLine, GxEPD_BLACK);
-
     String lastSyncText = "";
     lastSyncText += String(twoDigits(hour));
     lastSyncText += ":";
@@ -1156,26 +1427,19 @@ void drawAll(struct tm timeinfo)
     lastSyncText += String(m);
     lastSyncText += ".";
     lastSyncText += String(y);
-
     display.setFont(&CZProstoOneRegular5);
     int heightSyncText = getTextHeightCZ(lastSyncText.c_str(),&CZProstoOneRegular5);
     display.setCursor(0, display.height()-1);
     printCZ(lastSyncText.c_str());
-
     int yPosBottomLine = display.height() - 1 - heightSyncText - 5;
-
     display.drawLine(0, yPosBottomLine + 3, display.width(), yPosBottomLine + 3, GxEPD_BLACK);
     display.drawLine(0, yPosBottomLine, display.width(), yPosBottomLine, GxEPD_BLACK);
-
     int areaHeight = yPosBottomLine - yPosHeadLine;
-
     display.setFont(&CZPTSansRegular9);
     int _thFont = getTextHeightCZ("A", &CZPTSansRegular9);
     int rowMin = ICONWIDTH + 2 + (_thFont * 2) + 4;
-    // kolik řádků se vejde
     int rows = areaHeight / rowMin;
     if (rows < 1) rows = 1;
-    // skutečné rozdělení
     int baseH = areaHeight / rows;
     int remainder = areaHeight % rows;
     Rect rectRow[20] = {0};
@@ -1196,7 +1460,6 @@ void drawAll(struct tm timeinfo)
         addDays(tmp, i);
         ical.getEventsForDay(tmp, e1, e2);
         drawRow(rectRow[i], tmp, e1.c_str(), e2.c_str());
-        // oddělovací čára (volitelně)
         display.drawLine(0, yy + h, display.width(), yy + h, GxEPD_BLACK);
         yy += h;
     }
@@ -1205,64 +1468,58 @@ void drawAll(struct tm timeinfo)
 }
 
 
-
-
-
-
-// ===== SETUP =====
 void setup()
 {
-  Serial.begin(115200);
-  delay(200);
-  Serial.println("=== START ===");
-  SPI.begin(12,-1,11,CS_PIN);
-  Serial.println("SPI OK");
-  display.init(115200);
-  display.setRotation(1);
-  Serial.println("Display OK");
-  Serial.println("Connecting WiFi...");
-  WiFi.begin(ssid,password);
-  int wifiTry=0;
-  while(WiFi.status()!=WL_CONNECTED){
-    delay(500);
-    Serial.print(".");
-    wifiTry++;
-    if(wifiTry>20){
-      Serial.println("\nWiFi FAIL");
-      break;
+    Serial.begin(115200);
+    pinMode(RESET_PIN, INPUT_PULLUP);
+    pinMode(CLEAR_PIN, INPUT_PULLUP);
+    loadConfig();
+    auto cause = esp_sleep_get_wakeup_cause();
+    Serial.println("Wakeup cause: " + String(cause));
+    if (digitalRead(CLEAR_PIN) == LOW) 
+    {
+        delay(3000);
+        if (digitalRead(CLEAR_PIN) == LOW) 
+        {
+            Serial.println("CLEAR CONFIG");
+            clearConfig();
+        }
     }
-  }
-  if(WiFi.status()==WL_CONNECTED){
-    Serial.println("\nWiFi OK");
-  }
-  Serial.println("Sync time...");
-  MoonCalc::initTime();
-  while (!getLocalTime(&timeinfo)) delay(200);
-  int y=timeinfo.tm_year+1900;
-  int m=timeinfo.tm_mon+1;
-  int d=timeinfo.tm_mday;
-  int h=timeinfo.tm_hour;
-  int min=timeinfo.tm_min;
-  Serial.print("Date: ");
-  Serial.print(d); Serial.print(".");
-  Serial.print(m); Serial.print(".");
-  Serial.println(y);
-  Serial.print("Time: ");
-  Serial.print(h); Serial.print(":");
-  Serial.println(min);
-  Serial.println("Downloading ICS...");
-  if (ical.fetchICS(ICS_URL)) 
-  {
-    Serial.println("ICS stažen");
-  } 
-  else
-  {
-    Serial.println("Chyba stahování");
-  }
-  Serial.println("Drawing...");
-  drawAll(timeinfo);
-  Serial.println("DONE");
-  display.hibernate();
+    if (!hasWiFi()) 
+    {
+        Serial.println("Neni WiFi → CONFIG");
+        startConfig();
+    }
+    if (cause == ESP_SLEEP_WAKEUP_EXT1)
+    {
+        Serial.println("Wake by BUTTON");
+        unsigned long t = millis();
+        while (digitalRead(RESET_PIN) == LOW)
+        {
+            if (millis() - t > 3000)
+            {
+                Serial.println("Dlouhy stisk → CONFIG");
+                startConfig();
+            }
+        }
+        Serial.println("Kratky stisk → UPDATE");
+        doUpdate();
+        return;
+    }
+    if (digitalRead(RESET_PIN) == LOW)
+    {
+        delay(3000);
+        if (digitalRead(RESET_PIN) == LOW)
+        {
+            Serial.println("BOOT HOLD → CONFIG");
+            startConfig();
+        }
+        Serial.println("BOOT CLICK → UPDATE");
+        doUpdate();
+        return;
+    }
+    Serial.println("Normalni start → UPDATE");
+    doUpdate();
 }
 
 
@@ -1270,3 +1527,25 @@ void loop()
 {
   delay(1000);
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
