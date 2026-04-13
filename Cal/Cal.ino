@@ -210,6 +210,31 @@ const unsigned char drop3[] PROGMEM = {
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
 };
 
+const unsigned char air[] PROGMEM = {
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0x80, 0x00, 0x07, 0xc0, 0x00, 
+	0x0e, 0xe0, 0x00, 0x0c, 0x60, 0x00, 0x00, 0x60, 0x3f, 0xff, 0xc0, 0x3f, 0xff, 0xc0, 0x00, 0x00, 
+	0x00, 0x3f, 0xff, 0xf0, 0x3f, 0xff, 0xf8, 0x00, 0x00, 0x0c, 0x3f, 0xf8, 0x0c, 0x3f, 0xfc, 0x0c, 
+	0x00, 0x0c, 0x18, 0x00, 0x6c, 0x10, 0x00, 0x7c, 0x00, 0x00, 0x38, 0x00, 0x00, 0x00, 0x00, 0x00, 
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+};
+
+const unsigned char drop[] PROGMEM = {
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x18, 0x00, 0x00, 0x3c, 0x40, 0x00, 
+	0x6e, 0xe0, 0x00, 0xc7, 0xf0, 0x01, 0xc3, 0xb0, 0x03, 0x83, 0x18, 0x03, 0x03, 0x18, 0x06, 0x03, 
+	0x38, 0x06, 0x01, 0xf0, 0x0c, 0x00, 0xf0, 0x0c, 0x00, 0x30, 0x0d, 0x80, 0x30, 0x0d, 0x80, 0x30, 
+	0x07, 0xc0, 0x60, 0x06, 0xf8, 0x60, 0x03, 0x38, 0xc0, 0x03, 0xc3, 0xc0, 0x00, 0xff, 0x00, 0x00, 
+	0x3c, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+};
+
+const unsigned char thermo[] PROGMEM = {
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x18, 0x00, 0x00, 0x3c, 0x00, 0x00, 
+	0x66, 0x00, 0x00, 0x66, 0x00, 0x00, 0x66, 0x00, 0x00, 0x66, 0x00, 0x00, 0x66, 0x00, 0x00, 0x66, 
+	0x00, 0x00, 0x66, 0x00, 0x00, 0x66, 0x00, 0x00, 0xe7, 0x00, 0x01, 0xc3, 0x80, 0x01, 0x81, 0x80, 
+	0x01, 0x81, 0x80, 0x01, 0xc3, 0x00, 0x00, 0xe7, 0x00, 0x00, 0x7e, 0x00, 0x00, 0x3c, 0x00, 0x00, 
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+};
+
+
 
 struct tm timeinfo;
 
@@ -232,6 +257,8 @@ struct DayResult
   uint8_t icon;
   uint8_t wind;
   uint8_t rainIntensity;
+  float wind_ms;
+  float rain_mm;  
   bool valid;
 };
 
@@ -1028,6 +1055,120 @@ bool getWeatherForDay(float lat, float lon, tm timeinfo, DayResult &out)
       out.tMin = tMin[i];
       out.tMax = tMax[i];
       int code = wCode[i];
+      float r = rain[i];              // mm za den
+      float prob = rainProb[i];
+      float hours = rainHours[i];
+      float w_kmh = wind[i];
+      out.rain_mm = r;                // mm/den
+      out.wind_ms = w_kmh / 3.6;      // m/s
+      bool willRain = (prob >= 30.0 && hours > 0 && r > 0.2);
+      if (code == 0)
+      {
+        out.icon = ICON_SUNNY;
+      }
+      else if (code <= 2)
+      {
+        out.icon = willRain ? ICON_SHOWERS : ICON_PARTLY;
+      }
+      else if (code == 3)
+      {
+        out.icon = willRain ? ICON_SHOWERS : ICON_CLOUDY;
+      }
+      else if (code == 45 || code == 48)
+      {
+        out.icon = ICON_FOG;
+      }
+      else if (code >= 51 && code <= 67)
+      {
+        out.icon = willRain ? ICON_RAIN : ICON_CLOUDY;
+      }
+      else if (code >= 71 && code <= 77)
+      {
+        out.icon = ICON_SNOW;
+      }
+      else if (code >= 80 && code <= 82)
+      {
+        out.icon = willRain ? ICON_SHOWERS : ICON_CLOUDY;
+      }
+      else if (code == 85 || code == 86)
+      {
+        out.icon = ICON_SNOW;
+      }
+      else if (code >= 95)
+      {
+        out.icon = ICON_STORM;
+      }
+      else
+      {
+        out.icon = ICON_UNKNOWN;
+      }
+      Serial.print("Rain (mm/day): "); Serial.println(out.rain_mm);
+      Serial.print("Wind (m/s): "); Serial.println(out.wind_ms);
+      out.valid = true;
+      return true;
+    }
+  }
+  return false;
+}
+
+
+/*
+bool getWeatherForDay(float lat, float lon, tm timeinfo, DayResult &out) 
+{
+  out.valid = false;
+  char targetDate[11];
+  sprintf(targetDate, "%04d-%02d-%02d",
+          timeinfo.tm_year + 1900,
+          timeinfo.tm_mon + 1,
+          timeinfo.tm_mday);
+  String url = "https://api.open-meteo.com/v1/forecast?";
+  url += "latitude=" + String(lat, 6);
+  url += "&longitude=" + String(lon, 6);
+  url += "&daily=temperature_2m_max,temperature_2m_min,weathercode,precipitation_sum,precipitation_probability_max,precipitation_hours,windspeed_10m_max";
+  url += "&forecast_days=7&timezone=auto";
+  HTTPClient http;
+  http.begin(url);
+  http.setTimeout(15000);
+  int httpCode = http.GET();
+  if (httpCode != 200)
+  {
+    Serial.print("GetWeatherForDay > HTTP error: ");
+    Serial.println(httpCode);
+    http.end();
+    return false;
+  }
+  String payload = http.getString();
+  http.end();
+  StaticJsonDocument<768> filter;
+  filter["daily"]["time"] = true;
+  filter["daily"]["temperature_2m_max"] = true;
+  filter["daily"]["temperature_2m_min"] = true;
+  filter["daily"]["weathercode"] = true;
+  filter["daily"]["precipitation_sum"] = true;
+  filter["daily"]["precipitation_probability_max"] = true;
+  filter["daily"]["precipitation_hours"] = true;
+  filter["daily"]["windspeed_10m_max"] = true;
+  StaticJsonDocument<3072> doc;
+  if (deserializeJson(doc, payload, DeserializationOption::Filter(filter))) 
+  {
+    Serial.println("GetWeatherForDay > deserializeJson chyba!");
+    return false;
+  }
+  JsonArray time = doc["daily"]["time"];
+  JsonArray tMax = doc["daily"]["temperature_2m_max"];
+  JsonArray tMin = doc["daily"]["temperature_2m_min"];
+  JsonArray wCode = doc["daily"]["weathercode"];
+  JsonArray rain = doc["daily"]["precipitation_sum"];
+  JsonArray rainProb = doc["daily"]["precipitation_probability_max"];
+  JsonArray rainHours = doc["daily"]["precipitation_hours"];
+  JsonArray wind = doc["daily"]["windspeed_10m_max"];
+  for (int i = 0; i < time.size(); i++) 
+  {
+    if (strcmp(time[i], targetDate) == 0) 
+    {
+      out.tMin = tMin[i];
+      out.tMax = tMax[i];
+      int code = wCode[i];
       float r = rain[i];
       float prob = rainProb[i];
       float hours = rainHours[i];
@@ -1102,7 +1243,7 @@ bool getWeatherForDay(float lat, float lon, tm timeinfo, DayResult &out)
   }
   return false;
 }
-
+*/
 
 void addDays(struct tm &date, int days)
 {
@@ -1178,7 +1319,9 @@ void drawRow(const Rect& rect, const struct tm& date, const char* event1, const 
                    partRect[0].w, partRect[0].h,
                    GxEPD_RED);
   display.setTextColor(GxEPD_BLACK);
-  display.setFont(&MarkaziText_Regular12);
+  display.setFont(&Karla_SemiBold9);
+
+  /*
   int event1HeightFont = getTextHeightCZ("A", &MarkaziText_Regular12);
   int event1WidthFont = getTextWidthCZ(event1, &MarkaziText_Regular12);
   display.setCursor(
@@ -1186,6 +1329,7 @@ void drawRow(const Rect& rect, const struct tm& date, const char* event1, const 
       partRect[2].y + event1HeightFont
   );
   printCZ(event1);
+
   int event2HeightFont = getTextHeightCZ("A", &MarkaziText_Regular12);
   int event2WidthFont = getTextWidthCZ(event2, &MarkaziText_Regular12);
   display.setCursor(
@@ -1193,6 +1337,48 @@ void drawRow(const Rect& rect, const struct tm& date, const char* event1, const 
       partRect[3].y + event2HeightFont
   );
   printCZ(event2);
+  */
+
+  int fontHeight = getTextHeightCZ("A", &Karla_SemiBold9);
+
+  // kontrola pro const char*
+  bool hasEvent1 = (event1 != nullptr) && (event1[0] != '\0');
+  bool hasEvent2 = (event2 != nullptr) && (event2[0] != '\0');
+
+  // 🔵 oba eventy
+  if (hasEvent1 && hasEvent2)
+  {
+    display.setCursor(
+        partRect[2].x + 2,
+        partRect[2].y + fontHeight
+    );
+    printCZ(event1);
+
+    display.setCursor(
+        partRect[3].x + 2,
+        partRect[3].y + fontHeight
+    );
+    printCZ(event2);
+  }
+  // 🟡 jeden event (vycentrovaný)
+  else if (hasEvent1 || hasEvent2)
+  {
+    const char* event = hasEvent1 ? event1 : event2;
+
+    int combinedY = partRect[2].y;
+    int combinedHeight = partRect[2].h + partRect[3].h;
+
+    //int yCentered = combinedY + (combinedHeight / 2) + (fontHeight / 2);
+    int yCentered = combinedY + (combinedHeight - fontHeight) / 2 + fontHeight - 2;
+
+    display.setCursor(
+        partRect[2].x + 2,
+        yCentered
+    );
+    printCZ(event);
+  }
+
+  uint16_t colorGx = GxEPD_BLACK;
   DayResult dayRes;
   if (getWeatherForDay(lat, lon, date, dayRes))
   {
@@ -1200,50 +1386,52 @@ void drawRow(const Rect& rect, const struct tm& date, const char* event1, const 
     {
       case ICON_SUNNY:
       {
-        display.drawBitmap(partRect[1].x+1, partRect[1].y+1, sunny, ICONWIDTH, ICONWIDTH, GxEPD_BLACK);    
+        display.drawBitmap(partRect[1].x+1, partRect[1].y+1, sunny, ICONWIDTH, ICONWIDTH, colorGx);    
         break;
       }
       case ICON_PARTLY: 
       {
-        display.drawBitmap(partRect[1].x+1, partRect[1].y+1, partly, ICONWIDTH, ICONWIDTH, GxEPD_BLACK);    
+        display.drawBitmap(partRect[1].x+1, partRect[1].y+1, partly, ICONWIDTH, ICONWIDTH, colorGx);    
         break;
       }
       case ICON_CLOUDY: 
       {
-        display.drawBitmap(partRect[1].x+1, partRect[1].y+1, cloudy, ICONWIDTH, ICONWIDTH, GxEPD_BLACK);    
+        display.drawBitmap(partRect[1].x+1, partRect[1].y+1, cloudy, ICONWIDTH, ICONWIDTH, colorGx);    
         break;
       }
       case ICON_RAIN: 
       {
-        display.drawBitmap(partRect[1].x+1, partRect[1].y+1, rain, ICONWIDTH, ICONWIDTH, GxEPD_BLACK);    
+        display.drawBitmap(partRect[1].x+1, partRect[1].y+1, rain, ICONWIDTH, ICONWIDTH, colorGx);    
         break;
       }
       case ICON_SHOWERS: 
       {
-        display.drawBitmap(partRect[1].x+1, partRect[1].y+1, showers, ICONWIDTH, ICONWIDTH, GxEPD_BLACK);    
+        display.drawBitmap(partRect[1].x+1, partRect[1].y+1, showers, ICONWIDTH, ICONWIDTH, colorGx);    
         break;
       }
       case ICON_SNOW: 
       {
-        display.drawBitmap(partRect[1].x+1, partRect[1].y+1, snow, ICONWIDTH, ICONWIDTH, GxEPD_BLACK);    
+        display.drawBitmap(partRect[1].x+1, partRect[1].y+1, snow, ICONWIDTH, ICONWIDTH, colorGx);    
         break;
       }
       case ICON_STORM: 
       {
-        display.drawBitmap(partRect[1].x+1, partRect[1].y+1, storm, ICONWIDTH, ICONWIDTH, GxEPD_BLACK);    
+        display.drawBitmap(partRect[1].x+1, partRect[1].y+1, storm, ICONWIDTH, ICONWIDTH, colorGx);    
         break;
       }
       case ICON_FOG: 
       {
-        display.drawBitmap(partRect[1].x+1, partRect[1].y+1, fog, ICONWIDTH, ICONWIDTH, GxEPD_BLACK);    
+        display.drawBitmap(partRect[1].x+1, partRect[1].y+1, fog, ICONWIDTH, ICONWIDTH, colorGx);    
         break;
       }
       case ICON_UNKNOWN: 
       {
-        display.drawBitmap(partRect[1].x+1, partRect[1].y+1, unknown, ICONWIDTH, ICONWIDTH, GxEPD_BLACK);    
+        display.drawBitmap(partRect[1].x+1, partRect[1].y+1, unknown, ICONWIDTH, ICONWIDTH, colorGx);    
         break;
       }
-    }    
+    }
+
+    /*
     switch (dayRes.wind) 
     {
       case WIND_NONE:
@@ -1290,6 +1478,47 @@ void drawRow(const Rect& rect, const struct tm& date, const char* event1, const 
         break;
       }
     }
+    */
+
+    display.setFont(&Roboto_Condensed_Regular9);
+
+    display.drawBitmap(partRect[1].x + ICONWIDTH + 2, partRect[1].y+1, air, ICONWIDTH, ICONWIDTH, colorGx);
+    //display.setFont(&MarkaziText_Regular12);
+    display.setTextColor(GxEPD_BLACK);
+    int windHeightFont = getTextHeightCZ("A", &MarkaziText_Regular12);
+    String windText = String(dayRes.wind_ms, 1);// + " m/s";
+    int windWidthFont = getTextWidthCZ(windText.c_str(), &MarkaziText_Regular12);
+    display.setCursor(
+        partRect[1].x + (ICONWIDTH*2) + 2,
+        partRect[1].y + ((partRect[1].h/2)+(windHeightFont/2))
+    );
+    printCZ(windText.c_str());
+
+    display.drawBitmap(partRect[1].x + (ICONWIDTH*2) + windWidthFont + 2, partRect[1].y+1, drop, ICONWIDTH, ICONWIDTH, colorGx);
+    //display.setFont(&MarkaziText_Regular12);
+    display.setTextColor(GxEPD_BLACK);
+    int dropHeightFont = getTextHeightCZ("A", &MarkaziText_Regular12);
+    String dropText = String(dayRes.rain_mm, 1);// + " mm/den";
+    int dropWidthFont = getTextWidthCZ(dropText.c_str(), &MarkaziText_Regular12);
+    display.setCursor(
+        partRect[1].x + (ICONWIDTH*3) + windWidthFont + 2,
+        partRect[1].y + ((partRect[1].h/2)+(dropHeightFont/2))
+    );
+    printCZ(dropText.c_str());
+
+    display.drawBitmap(partRect[1].x + (ICONWIDTH*3) + windWidthFont + dropWidthFont + 2, partRect[1].y+1, thermo, ICONWIDTH, ICONWIDTH, colorGx);
+    //display.setFont(&MarkaziText_Regular12);
+    display.setTextColor(GxEPD_BLACK);
+    int thermoHeightFont = getTextHeightCZ("A", &MarkaziText_Regular12);
+    String thermoText = String(dayRes.tMin, 1) + "/" + String(dayRes.tMax, 1) + "C";
+    int thermoWidthFont = getTextWidthCZ(thermoText.c_str(), &MarkaziText_Regular12);
+    display.setCursor(
+        partRect[1].x + (ICONWIDTH*4) + windWidthFont + dropWidthFont + 2,
+        partRect[1].y + ((partRect[1].h/2)+(thermoHeightFont/2))
+    );
+    printCZ(thermoText.c_str());
+
+    /*
     display.setTextColor(GxEPD_BLACK);
     display.setFont(&MarkaziText_SemiBold12);
     int tempHeightFont = getTextHeightCZ("A", &MarkaziText_SemiBold12);
@@ -1300,6 +1529,9 @@ void drawRow(const Rect& rect, const struct tm& date, const char* event1, const 
         partRect[1].y + ((partRect[1].h/2)+(tempHeightFont/2))
     );
     printCZ(tempText.c_str());
+    */
+
+
   }
 }
 
@@ -1310,12 +1542,15 @@ void drawAll(struct tm timeinfo)
   {
     "LEDEN","ÚNOR","BŘEZEN","DUBEN","KVĚTEN","ČERVEN","ČERVENEC","SRPEN","ZÁŘÍ","ŘÍJEN","LISTOPAD","PROSINEC"
   };
+  display.setFullWindow();
   display.firstPage();
   do
   {
+    display.fillScreen(GxEPD_WHITE);
     display.setTextColor(GxEPD_RED);
-    display.setFont(&CZSigmarRegular20);
-    int widthMonthText = getTextWidthCZ(namemonth[timeinfo.tm_mon],&CZSigmarRegular20);
+    //display.setFont(&CZSigmarRegular20);
+    display.setFont(&Boldonse_Regular15);
+    int widthMonthText = getTextWidthCZ(namemonth[timeinfo.tm_mon],&Boldonse_Regular15);
     int xPosMonthText = (display.width() - widthMonthText) / 2;
     int yPosMonthText = 0+((display.height()/100)*11);
     display.setCursor(xPosMonthText+1, yPosMonthText+1);
